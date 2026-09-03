@@ -22,7 +22,7 @@ const upload = multer({
 // GET /api/leaderboard - min 3 match, urut rating tertinggi
 router.get("/leaderboard", async (req, res) => {
   const players = await prisma.player.findMany({
-    where: { isActive: true, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
+    where: { isActive: true, isApproved: true, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
     orderBy: { currentRating: "desc" },
     select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true },
   });
@@ -76,7 +76,7 @@ router.get("/players/:id", async (req, res) => {
 // GET /api/players - list semua pemain aktif (untuk pilih lawan saat submit match)
 router.get("/players", requireAuth, async (req, res) => {
   const players = await prisma.player.findMany({
-    where: { isActive: true },
+    where: { isActive: true, isApproved: true },
     select: { id: true, name: true, currentRating: true },
     orderBy: { name: "asc" },
   });
