@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MatchStatus {
+  pending
+  confirmed
+  disputed
+  expired
+}
+
+model Player {
+  id             Int      @id @default(autoincrement())
+  name           String
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  unitKerja      String?  @map("unit_kerja")
+  currentRating  Decimal  @default(1500.00) @map("current_rating") @db.Decimal(7, 2)
+  matchesPlayed  Int      @default(0) @map("matches_played")
+  isProvisional  Boolean  @default(true) @map("is_provisional")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  matchesWon      Match[]        @relation("WinnerMatches")
+  matchesLost     Match[]        @relation("LoserMatches")
+  ratingHistory   RatingHistory[]
+  matchesSubmitted Match[]       @relation("SubmittedMatches")
+
+  @@map("players")
+}
+
+model Match {
+  id                  Int         @id @default(autoincrement())
+  winnerId            Int         @map("winner_id")
+  loserId             Int         @map("loser_id")
+  loserGames          Int         @map("loser_games")
+
+  ratingWinnerBefore  Decimal?    @map("rating_winner_before") @db.Decimal(7, 2)
+  ratingLoserBefore   Decimal?    @map("rating_loser_before") @db.Decimal(7, 2)
+  ratingWinnerAfter   Decimal?    @map("rating_winner_after") @db.Decimal(7, 2)
+  ratingLoserAfter    Decimal?    @map("rating_loser_after") @db.Decimal(7, 2)
+
+  kFactorWinner       Int?        @map("k_factor_winner")
+  kFactorLoser        Int?        @map("k_factor_loser")
+  marginMultiplier    Decimal?    @map("margin_multiplier") @db.Decimal(5, 3)
+
+  matchDate           DateTime    @default(now()) @map("match_date")
+  inputBy             Int         @map("input_by")
+
+  confirmedByWinner   Boolean     @default(false) @map("confirmed_by_winner")
+  confirmedByLoser    Boolean     @default(false) @map("confirmed_by_loser")
+  status              MatchStatus @default(pending)
+  rejectReason         String?    @map("reject_reason")
+
+  createdAt           DateTime    @default(now()) @map("created_at")
+  confirmedAt          DateTime?  @map("confirmed_at")
+
+  winner    Player @relation("WinnerMatches", fields: [winnerId], references: [id])
+  loser     Player @relation("LoserMatches", fields: [loserId], references: [id])
+  submitter Player @relation("SubmittedMatches", fields: [inputBy], references: [id])
+  ratingHistory RatingHistory[]
+
+  @@map("matches")
+}
+
+model RatingHistory {
+  id            Int      @id @default(autoincrement())
+  playerId      Int      @map("player_id")
+  matchId       Int      @map("match_id")
+  ratingBefore  Decimal  @map("rating_before") @db.Decimal(7, 2)
+  ratingAfter   Decimal  @map("rating_after") @db.Decimal(7, 2)
+  recordedAt    DateTime @default(now()) @map("recorded_at")
+
+  player Player @relation(fields: [playerId], references: [id])
+  match  Match  @relation(fields: [matchId], references: [id])
+
+  @@map("rating_history")
+}

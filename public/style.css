@@ -1,0 +1,33 @@
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f4f4f2;
+  margin: 0;
+  color: #1a1a1a;
+}
+#app { max-width: 480px; margin: 0 auto; padding: 1rem; min-height: 100vh; }
+h1, h2 { font-weight: 600; }
+.card {
+  background: #fff; border-radius: 12px; padding: 1rem 1.25rem;
+  margin-bottom: 1rem; border: 1px solid #e5e5e0;
+}
+.btn {
+  width: 100%; padding: 0.75rem; border: none; border-radius: 8px;
+  background: #1a1a1a; color: #fff; font-size: 15px; font-weight: 500;
+  cursor: pointer; margin-top: 0.5rem;
+}
+.btn.secondary { background: #fff; color: #1a1a1a; border: 1px solid #ccc; }
+.btn.danger { background: #c62828; }
+input, select {
+  width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 8px;
+  font-size: 14px; margin-top: 4px; margin-bottom: 0.75rem;
+}
+label { font-size: 13px; color: #555; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+.muted { color: #777; font-size: 13px; }
+.rank-badge { width: 24px; display: inline-block; color: #777; }
+.nav { display: flex; gap: 8px; margin-bottom: 1rem; }
+.nav button { flex: 1; padding: 0.5rem; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; }
+.nav button.active { background: #1a1a1a; color: #fff; }
+.error { color: #c62828; font-size: 13px; margin-top: -0.5rem; margin-bottom: 0.75rem; }
+.banner { background: #fff3cd; border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem; font-size: 13px; }
