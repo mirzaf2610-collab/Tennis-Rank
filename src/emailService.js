@@ -1,33 +1,29 @@
-// Kirim email lewat Gmail SMTP pakai nodemailer.
-// Butuh 2 env var: EMAIL_USER (alamat Gmail pengirim) dan EMAIL_APP_PASSWORD (App Password, BUKAN password Gmail biasa).
-
-const nodemailer = require("nodemailer");
-
-let transporter = null;
-function getTransporter() {
-  if (!transporter) {
-    const user = process.env.EMAIL_USER;
-    const pass = process.env.EMAIL_APP_PASSWORD;
-    if (!user || !pass) {
-      throw new Error("EMAIL_USER / EMAIL_APP_PASSWORD belum diatur di environment variables");
-    }
-    transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user, pass },
-    });
-  }
-  return transporter;
-}
+// Kirim email lewat Resend API (HTTPS, kompatibel dengan Railway free plan yang blokir SMTP).
 
 async function sendMail({ to, subject, html }) {
-  const t = getTransporter();
-  const fromName = process.env.EMAIL_FROM_NAME || "PSP Tennis Rank";
-  await t.sendMail({
-    from: `"${fromName}" <${process.env.EMAIL_USER}>`,
-    to,
-    subject,
-    html,
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY belum diatur di environment variables");
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.EMAIL_FROM || "PSP Tennis Rank <noreply@mail.bicycle-miniature.com>",
+      to: [to],
+      subject,
+      html,
+    }),
   });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Gagal mengirim email: ${errBody}`);
+  }
 }
 
 async function sendPasswordResetEmail(toEmail, toName, resetLink) {
