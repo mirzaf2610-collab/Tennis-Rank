@@ -13,14 +13,14 @@ async function sendPasswordResetEmail(toEmail, toName, resetLink) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM || "Tennis Ranking Pusri <onboarding@resend.dev>",
+      from: process.env.EMAIL_FROM || "PSP Tennis Rank <onboarding@resend.dev>",
       to: [toEmail],
-      subject: "Reset Password - Tennis Ranking Pusri",
+      subject: "Reset Password - PSP Tennis Rank",
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
           <h2>Reset Password</h2>
           <p>Halo ${toName},</p>
-          <p>Kami menerima permintaan untuk reset password akun Tennis Ranking Pusri Anda. Klik tombol di bawah untuk membuat password baru:</p>
+          <p>Kami menerima permintaan untuk reset password akun PSP Tennis Rank Anda. Klik tombol di bawah untuk membuat password baru:</p>
           <p style="margin: 24px 0;">
             <a href="${resetLink}" style="background:#1a1a1a;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;display:inline-block;">
               Reset Password
@@ -51,14 +51,14 @@ async function sendVerificationEmail(toEmail, toName, verifyLink) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM || "Tennis Ranking Pusri <onboarding@resend.dev>",
+      from: process.env.EMAIL_FROM || "PSP Tennis Rank <onboarding@resend.dev>",
       to: [toEmail],
-      subject: "Verifikasi Email - Tennis Ranking Pusri",
+      subject: "Verifikasi Email - PSP Tennis Rank",
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
           <h2>Verifikasi Email Anda</h2>
           <p>Halo ${toName},</p>
-          <p>Terima kasih sudah daftar di Tennis Ranking Pusri. Klik tombol di bawah untuk verifikasi email dan mengaktifkan akun Anda:</p>
+          <p>Terima kasih sudah daftar di PSP Tennis Rank. Klik tombol di bawah untuk verifikasi email dan mengaktifkan akun Anda:</p>
           <p style="margin: 24px 0;">
             <a href="${verifyLink}" style="background:#1a1a1a;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;display:inline-block;">
               Verifikasi Email
