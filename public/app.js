@@ -34,12 +34,12 @@ function el(html) {
 }
 
 function nav(active) {
-  const items = [
-    ["leaderboard", "Ranking"],
-    ["submit", "Input match"],
-    ["confirm", "Konfirmasi"],
-    ["profile", "Profil"],
-  ];
+  const items = [["leaderboard", "Ranking"]];
+  if (state.token) {
+    items.push(["submit", "Input match"], ["confirm", "Konfirmasi"], ["profile", "Profil"]);
+  } else {
+    items.push(["login", "Masuk / Daftar"]);
+  }
   const buttons = items
     .map(([key, label]) => `<button data-page="${key}" class="${key === active ? "active" : ""}">${label}</button>`)
     .join("");
@@ -291,15 +291,23 @@ async function render() {
   app.innerHTML = "";
   app.appendChild(el(`<h1>Tennis Ranking Pusri</h1>`));
 
-  if (!state.token) {
+  if (state.token && !state.player) loadAuth();
+
+  const protectedPages = ["submit", "confirm", "profile"];
+  if (!state.token && protectedPages.includes(state.page)) {
+    // Perlu login untuk halaman ini
+    app.appendChild(nav("login"));
     return renderLogin(app);
   }
-  if (!state.player) loadAuth();
 
-  if (state.page === "leaderboard") return renderLeaderboard(app);
+  if (state.page === "login") {
+    app.appendChild(nav("login"));
+    return renderLogin(app);
+  }
   if (state.page === "submit") return renderSubmit(app);
   if (state.page === "confirm") return renderConfirm(app);
   if (state.page === "profile") return renderProfile(app);
+  return renderLeaderboard(app);
 }
 
 render();
