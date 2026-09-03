@@ -583,7 +583,12 @@ async function renderProfile(container) {
 async function render() {
   const app = document.getElementById("app");
   app.innerHTML = "";
-  app.appendChild(el(`<h1>Tennis Ranking Pusri</h1>`));
+  app.appendChild(el(`
+    <div style="margin-bottom:1rem">
+      <h1 style="margin-bottom:0.25rem">PSP Tennis Rank</h1>
+      <p class="muted" style="font-size:12px;margin:0">Disclaimer: Rank ini hanya untuk seru-seruan, menampilkan berdasarkan frekuensi main dan kemenangan, tidak bisa menjadi patokan skill sebenarnya.</p>
+    </div>
+  `));
 
   if (state.token && !state.player) loadAuth();
 
