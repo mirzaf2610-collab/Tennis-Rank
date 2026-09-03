@@ -23,13 +23,29 @@ model Player {
   currentRating  Decimal  @default(1500.00) @map("current_rating") @db.Decimal(7, 2)
   matchesPlayed  Int      @default(0) @map("matches_played")
   isProvisional  Boolean  @default(true) @map("is_provisional")
+
+  doublesRating         Decimal @default(1500.00) @map("doubles_rating") @db.Decimal(7, 2)
+  doublesMatchesPlayed  Int     @default(0) @map("doubles_matches_played")
+  doublesIsProvisional  Boolean @default(true) @map("doubles_is_provisional")
+
   isActive       Boolean  @default(true) @map("is_active")
+  photoUrl       String?  @map("photo_url")
+  emailVerified  Boolean  @default(false) @map("email_verified")
   createdAt      DateTime @default(now()) @map("created_at")
 
   matchesWon      Match[]        @relation("WinnerMatches")
   matchesLost     Match[]        @relation("LoserMatches")
   ratingHistory   RatingHistory[]
   matchesSubmitted Match[]       @relation("SubmittedMatches")
+
+  doublesAsT1P1 DoublesMatch[] @relation("T1P1")
+  doublesAsT1P2 DoublesMatch[] @relation("T1P2")
+  doublesAsT2P1 DoublesMatch[] @relation("T2P1")
+  doublesAsT2P2 DoublesMatch[] @relation("T2P2")
+  doublesSubmitted DoublesMatch[] @relation("DoublesSubmitted")
+  doublesRatingHistory DoublesRatingHistory[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@map("players")
 }
@@ -80,4 +96,93 @@ model RatingHistory {
   match  Match  @relation(fields: [matchId], references: [id])
 
   @@map("rating_history")
+}
+
+model DoublesMatch {
+  id            Int      @id @default(autoincrement())
+
+  team1Player1Id Int @map("team1_player1_id")
+  team1Player2Id Int @map("team1_player2_id")
+  team2Player1Id Int @map("team2_player1_id")
+  team2Player2Id Int @map("team2_player2_id")
+
+  winningTeam   Int      @map("winning_team") // 1 atau 2
+  loserGames    Int      @map("loser_games")  // 0-5
+
+  team1RatingBefore Decimal? @map("team1_rating_before") @db.Decimal(7, 2)
+  team2RatingBefore Decimal? @map("team2_rating_before") @db.Decimal(7, 2)
+  marginMultiplier  Decimal? @map("margin_multiplier") @db.Decimal(5, 3)
+
+  t1p1RatingBefore Decimal? @map("t1p1_rating_before") @db.Decimal(7, 2)
+  t1p1RatingAfter  Decimal? @map("t1p1_rating_after") @db.Decimal(7, 2)
+  t1p2RatingBefore Decimal? @map("t1p2_rating_before") @db.Decimal(7, 2)
+  t1p2RatingAfter  Decimal? @map("t1p2_rating_after") @db.Decimal(7, 2)
+  t2p1RatingBefore Decimal? @map("t2p1_rating_before") @db.Decimal(7, 2)
+  t2p1RatingAfter  Decimal? @map("t2p1_rating_after") @db.Decimal(7, 2)
+  t2p2RatingBefore Decimal? @map("t2p2_rating_before") @db.Decimal(7, 2)
+  t2p2RatingAfter  Decimal? @map("t2p2_rating_after") @db.Decimal(7, 2)
+
+  matchDate     DateTime @default(now()) @map("match_date")
+  inputBy       Int      @map("input_by")
+
+  confirmedT1P1 Boolean  @default(false) @map("confirmed_t1p1")
+  confirmedT1P2 Boolean  @default(false) @map("confirmed_t1p2")
+  confirmedT2P1 Boolean  @default(false) @map("confirmed_t2p1")
+  confirmedT2P2 Boolean  @default(false) @map("confirmed_t2p2")
+
+  status        MatchStatus @default(pending)
+  rejectReason  String?  @map("reject_reason")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  confirmedAt   DateTime? @map("confirmed_at")
+
+  team1Player1 Player @relation("T1P1", fields: [team1Player1Id], references: [id])
+  team1Player2 Player @relation("T1P2", fields: [team1Player2Id], references: [id])
+  team2Player1 Player @relation("T2P1", fields: [team2Player1Id], references: [id])
+  team2Player2 Player @relation("T2P2", fields: [team2Player2Id], references: [id])
+  submitter    Player @relation("DoublesSubmitted", fields: [inputBy], references: [id])
+
+  ratingHistory DoublesRatingHistory[]
+
+  @@map("doubles_matches")
+}
+
+model DoublesRatingHistory {
+  id            Int      @id @default(autoincrement())
+  playerId      Int      @map("player_id")
+  matchId       Int      @map("match_id")
+  ratingBefore  Decimal  @map("rating_before") @db.Decimal(7, 2)
+  ratingAfter   Decimal  @map("rating_after") @db.Decimal(7, 2)
+  recordedAt    DateTime @default(now()) @map("recorded_at")
+
+  player Player       @relation(fields: [playerId], references: [id])
+  match  DoublesMatch @relation(fields: [matchId], references: [id])
+
+  @@map("doubles_rating_history")
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  playerId  Int      @map("player_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        Int      @id @default(autoincrement())
+  playerId  Int      @map("player_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@map("email_verification_tokens")
 }

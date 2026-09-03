@@ -1,17 +1,30 @@
 const express = require("express");
+const multer = require("multer");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { MIN_MATCHES_LEADERBOARD } = require("../elo");
+const { uploadAvatar } = require("../supabaseStorage");
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }, // maks 2MB
+  fileFilter: (req, file, cb) => {
+    if (!["image/jpeg", "image/png", "image/jpg"].includes(file.mimetype)) {
+      return cb(new Error("Hanya file JPG/PNG yang diperbolehkan"));
+    }
+    cb(null, true);
+  },
+});
 
 // GET /api/leaderboard - min 3 match, urut rating tertinggi
 router.get("/leaderboard", async (req, res) => {
   const players = await prisma.player.findMany({
     where: { isActive: true, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
     orderBy: { currentRating: "desc" },
-    select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true },
+    select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true },
   });
 
   const leaderboard = players.map((p, i) => ({ rank: i + 1, ...p }));
@@ -50,6 +63,8 @@ router.get("/players/:id", async (req, res) => {
     select: {
       id: true, name: true, unitKerja: true, currentRating: true,
       matchesPlayed: true, isProvisional: true, createdAt: true,
+      doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true,
+      photoUrl: true,
     },
   });
   if (!player) {
@@ -110,6 +125,25 @@ router.get("/players/me/pending-confirmations", requireAuth, async (req, res) =>
     });
 
   res.json({ pending });
+});
+
+// POST /api/players/me/photo - upload foto profil
+router.post("/players/me/photo", requireAuth, (req, res) => {
+  upload.single("photo")(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: { code: "UPLOAD_ERROR", message: err.message } });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: { code: "NO_FILE", message: "Tidak ada file foto yang dikirim" } });
+    }
+    try {
+      const publicUrl = await uploadAvatar(req.playerId, req.file.buffer, req.file.mimetype);
+      await prisma.player.update({ where: { id: req.playerId }, data: { photoUrl: publicUrl } });
+      res.json({ photoUrl: publicUrl });
+    } catch (e) {
+      res.status(500).json({ error: { code: "SERVER_ERROR", message: e.message } });
+    }
+  });
 });
 
 module.exports = router;
