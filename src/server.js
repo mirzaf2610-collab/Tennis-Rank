@@ -7,6 +7,7 @@ const authRoutes = require("./routes/auth");
 const playerRoutes = require("./routes/players");
 const matchRoutes = require("./routes/matches");
 const doublesMatchRoutes = require("./routes/doublesMatches");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 app.use(cors());
@@ -20,6 +21,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api", playerRoutes);
 app.use("/api", matchRoutes);
 app.use("/api", doublesMatchRoutes);
+app.use("/api", adminRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
