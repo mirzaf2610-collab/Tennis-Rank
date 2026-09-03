@@ -55,6 +55,9 @@ function nav(active) {
   const items = [["leaderboard", "Ranking"]];
   if (state.token) {
     items.push(["submit", "Input Single"], ["submitDoubles", "Input Ganda"], ["confirm", "Konfirmasi"], ["profile", "Profil"]);
+    if (state.player && state.player.isAdmin) {
+      items.push(["admin", "Admin"]);
+    }
   } else {
     items.push(["login", "Masuk / Daftar"]);
   }
@@ -492,6 +495,53 @@ async function renderConfirm(container) {
   }
 }
 
+async function renderAdmin(container) {
+  container.appendChild(nav("admin"));
+  const wrap = el(`<div class="card"><h2>Persetujuan Pendaftar Baru</h2><div id="pending-players-list">Memuat...</div></div>`);
+  container.appendChild(wrap);
+
+  try {
+    const { players } = await api("/admin/pending-players");
+    const list = wrap.querySelector("#pending-players-list");
+    if (players.length === 0) {
+      list.innerHTML = `<p class="muted">Tidak ada pendaftar yang menunggu persetujuan.</p>`;
+      return;
+    }
+    list.innerHTML = "";
+    players.forEach((p) => {
+      const item = el(`
+        <div class="row" style="flex-direction:column; align-items:stretch; gap:6px;">
+          <div><strong>${p.name}</strong> — ${p.email}${p.unitKerja ? ` (${p.unitKerja})` : ""}</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" style="margin-top:0" data-action="approve" data-id="${p.id}">Setujui</button>
+            <button class="btn danger" style="margin-top:0" data-action="reject" data-id="${p.id}">Tolak</button>
+          </div>
+        </div>
+      `);
+      item.querySelector('[data-action="approve"]').addEventListener("click", async () => {
+        try {
+          await api(`/admin/approve/${p.id}`, { method: "POST" });
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+      item.querySelector('[data-action="reject"]').addEventListener("click", async () => {
+        if (!confirm(`Yakin tolak pendaftaran ${p.name}? Akun akan dihapus.`)) return;
+        try {
+          await api(`/admin/reject/${p.id}`, { method: "POST" });
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+      list.appendChild(item);
+    });
+  } catch (err) {
+    wrap.querySelector("#pending-players-list").innerHTML = `<p class="error">${err.message}</p>`;
+  }
+}
+
 async function renderProfile(container) {
   container.appendChild(nav("profile"));
   const wrap = el(`
@@ -595,7 +645,7 @@ async function render() {
   if (state.page === "resetPassword") return renderResetPassword(app);
   if (state.page === "verifyEmail") return renderVerifyEmail(app);
 
-  const protectedPages = ["submit", "submitDoubles", "confirm", "profile"];
+  const protectedPages = ["submit", "submitDoubles", "confirm", "profile", "admin"];
   if (!state.token && protectedPages.includes(state.page)) {
     // Perlu login untuk halaman ini
     app.appendChild(nav("login"));
@@ -610,6 +660,7 @@ async function render() {
   if (state.page === "submitDoubles") return renderSubmitDoubles(app);
   if (state.page === "confirm") return renderConfirm(app);
   if (state.page === "profile") return renderProfile(app);
+  if (state.page === "admin") return renderAdmin(app);
   return renderLeaderboard(app);
 }
 
