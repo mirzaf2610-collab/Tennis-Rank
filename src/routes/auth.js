@@ -32,24 +32,21 @@ router.post("/register", async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const player = await prisma.player.create({
-    data: { name, email, passwordHash, unitKerja: unitKerja || null },
+    data: { name, email, passwordHash, unitKerja: unitKerja || null, emailVerified: true },
   });
 
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 jam
-  await prisma.emailVerificationToken.create({ data: { playerId: player.id, token, expiresAt } });
-
-  const baseUrl = req.body.appUrl || `${req.protocol}://${req.get("host")}`;
-  const verifyLink = `${baseUrl}/?verifyToken=${token}`;
-
-  try {
-    await sendVerificationEmail(player.email, player.name, verifyLink);
-  } catch (e) {
-    return res.status(500).json({ error: { code: "EMAIL_FAILED", message: `Akun dibuat, tapi gagal kirim email verifikasi: ${e.message}` } });
-  }
-
+  const token = signToken(player);
   res.status(201).json({
-    message: "Akun berhasil dibuat. Silakan cek email Anda untuk verifikasi sebelum login.",
+    token,
+    player: {
+      id: player.id,
+      name: player.name,
+      email: player.email,
+      currentRating: player.currentRating,
+      matchesPlayed: player.matchesPlayed,
+      isProvisional: player.isProvisional,
+      photoUrl: player.photoUrl,
+    },
   });
 });
 
@@ -74,12 +71,6 @@ router.post("/login", async (req, res) => {
   if (!valid) {
     return res.status(401).json({
       error: { code: "INVALID_CREDENTIALS", message: "Email atau password salah" },
-    });
-  }
-
-  if (!player.emailVerified) {
-    return res.status(403).json({
-      error: { code: "EMAIL_NOT_VERIFIED", message: "Email belum diverifikasi. Cek inbox/spam Anda, atau minta kirim ulang." },
     });
   }
 
