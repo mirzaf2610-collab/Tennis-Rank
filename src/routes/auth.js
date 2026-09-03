@@ -83,6 +83,12 @@ router.post("/login", async (req, res) => {
     });
   }
 
+  if (!player.isApproved) {
+    return res.status(403).json({
+      error: { code: "NOT_APPROVED", message: "Akun Anda masih menunggu persetujuan admin komunitas. Coba lagi nanti." },
+    });
+  }
+
   const token = signToken(player);
   res.json({
     token,
@@ -94,6 +100,7 @@ router.post("/login", async (req, res) => {
       matchesPlayed: player.matchesPlayed,
       isProvisional: player.isProvisional,
       photoUrl: player.photoUrl,
+      isAdmin: player.isAdmin,
     },
   });
 });
