@@ -109,19 +109,38 @@ async function renderLogin(container) {
     const errorEl = box.querySelector("#f-error");
     errorEl.style.display = "none";
     try {
-      let data;
       if (mode === "register") {
         if (!name) throw new Error("Nama wajib diisi");
-        data = await api("/auth/register", { method: "POST", body: JSON.stringify({ name, email, password }) });
-      } else {
-        data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+        const data = await api("/auth/register", { method: "POST", body: JSON.stringify({ name, email, password }) });
+        alert(data.message || "Akun berhasil dibuat. Silakan cek email Anda untuk verifikasi sebelum login.");
+        mode = "login";
+        box.querySelectorAll("[data-mode]").forEach((x) => x.classList.remove("active"));
+        box.querySelector('[data-mode="login"]').classList.add("active");
+        box.querySelector("#name-field").style.display = "none";
+        box.querySelector("#f-submit").textContent = "Masuk";
+        return;
       }
+      const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
       saveAuth(data.token, data.player);
       state.page = "leaderboard";
       render();
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
+      if (err.message && err.message.includes("belum diverifikasi")) {
+        const existing = box.querySelector("#resend-verify-btn");
+        if (existing) existing.remove();
+        const resendBtn = el(`<button id="resend-verify-btn" class="btn secondary" type="button" style="margin-top:0.5rem">Kirim ulang email verifikasi</button>`);
+        resendBtn.addEventListener("click", async () => {
+          try {
+            const data = await api("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email }) });
+            alert(data.message || "Email verifikasi sudah dikirim ulang.");
+          } catch (e) {
+            alert(e.message);
+          }
+        });
+        errorEl.after(resendBtn);
+      }
     }
   });
   box.querySelector("#forgot-btn").addEventListener("click", async () => {
