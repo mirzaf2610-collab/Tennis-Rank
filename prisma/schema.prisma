@@ -31,6 +31,8 @@ model Player {
   isActive       Boolean  @default(true) @map("is_active")
   photoUrl       String?  @map("photo_url")
   emailVerified  Boolean  @default(false) @map("email_verified")
+  isApproved     Boolean  @default(false) @map("is_approved")
+  isAdmin        Boolean  @default(false) @map("is_admin")
   createdAt      DateTime @default(now()) @map("created_at")
 
   matchesWon      Match[]        @relation("WinnerMatches")
