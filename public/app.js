@@ -92,7 +92,7 @@ async function renderLogin(container) {
         <input id="f-name" type="text" placeholder="Isi Nama lengkap (akan tampil di tabel rank)" />
       </div>
       <label>Email</label>
-      <input id="f-email" type="email" placeholder="nama@pusri.co.id" />
+      <input id="f-email" type="email" placeholder="disarankan pakai Gmail" />
       <label>Password</label>
       <input id="f-password" type="password" placeholder="Minimal 6 karakter" />
       <div id="f-error" class="error" style="display:none"></div>
