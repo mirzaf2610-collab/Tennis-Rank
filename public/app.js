@@ -294,20 +294,34 @@ async function renderSubmit(container) {
       <h2>Input hasil match</h2>
       <label>Lawan</label>
       <select id="opponent"></select>
+      <label>Format (main sampai berapa game)</label>
+      <select id="target-games">
+        <option value="4">First to 4</option>
+        <option value="6" selected>First to 6 (standar)</option>
+        <option value="8">First to 8</option>
+      </select>
       <label>Siapa yang menang?</label>
       <select id="who-won">
         <option value="me">Saya menang</option>
         <option value="opponent">Lawan menang</option>
       </select>
-      <label>Game yang didapat pihak kalah (0-5)</label>
-      <select id="loser-games">
-        ${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n}</option>`).join("")}
-      </select>
+      <label>Game yang didapat pihak kalah</label>
+      <select id="loser-games"></select>
       <div id="f-error" class="error" style="display:none"></div>
       <button id="submit-btn" class="btn">Submit hasil</button>
     </div>
   `);
   container.appendChild(wrap);
+
+  function refreshLoserGamesOptions() {
+    const targetGames = Number(wrap.querySelector("#target-games").value);
+    const loserGamesSelect = wrap.querySelector("#loser-games");
+    const options = [];
+    for (let n = 0; n < targetGames; n++) options.push(n);
+    loserGamesSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join("");
+  }
+  wrap.querySelector("#target-games").addEventListener("change", refreshLoserGamesOptions);
+  refreshLoserGamesOptions();
 
   try {
     const { players } = await api("/players");
@@ -323,6 +337,7 @@ async function renderSubmit(container) {
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
     const opponentId = Number(wrap.querySelector("#opponent").value);
+    const targetGames = Number(wrap.querySelector("#target-games").value);
     const iWon = wrap.querySelector("#who-won").value === "me";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
@@ -334,7 +349,7 @@ async function renderSubmit(container) {
     try {
       const data = await api("/matches", {
         method: "POST",
-        body: JSON.stringify({ winnerId, loserId, loserGames }),
+        body: JSON.stringify({ winnerId, loserId, loserGames, targetGames }),
       });
       alert(data.message || "Hasil match berhasil dikirim, menunggu konfirmasi lawan.");
       state.page = "leaderboard";
@@ -410,7 +425,7 @@ async function renderSubmitDoubles(container) {
           loserGames,
         }),
       });
-      alert(data.message || "Hasil match ganda dikirim, menunggu konfirmasi 3 pemain lain.");
+      alert(data.message || "Hasil match ganda dikirim, menunggu konfirmasi salah satu pemain tim lawan.");
       state.page = "leaderboard";
       render();
     } catch (err) {
