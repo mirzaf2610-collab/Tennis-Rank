@@ -51,6 +51,11 @@ function avatarHtml(photoUrl, name, size = 32) {
   return `<span style="width:${size}px;height:${size}px;border-radius:50%;background:#ddd;display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.4)}px;font-weight:600;color:#555;flex-shrink:0">${initials}</span>`;
 }
 
+function badgesToHtml(badges) {
+  if (!badges || badges.length === 0) return "";
+  return badges.map((b) => `${b.emoji} ${b.label}`).join("<br/>");
+}
+
 function nav(active) {
   const items = [["leaderboard", "Ranking"]];
   if (state.token) {
@@ -252,22 +257,33 @@ async function renderLeaderboard(container) {
       if (leaderboard.length === 0) {
         list.innerHTML = `<p class="muted">Belum ada pemain dengan minimal 3 match.</p>`;
       } else {
-        list.innerHTML = leaderboard
-          .map(
-            (p) => `
-          <div class="row" style="align-items:flex-start">
-            <span style="display:flex;align-items:center;gap:8px">
-              <span class="rank-badge">#${p.rank}</span>
-              ${avatarHtml(p.photoUrl, p.name, 28)}
-              <span>
-                <div>${p.name}</div>
-                <div class="muted" style="font-size:11px">${p.matchesPlayed}x main &middot; ${p.wins}M-${p.losses}K &middot; ${p.winRate}% win</div>
-              </span>
-            </span>
-            <span>${Math.round(p.currentRating)}</span>
-          </div>`
-          )
+        const maxMatches = Math.max(...leaderboard.map((p) => p.matchesPlayed));
+        const rows = leaderboard
+          .map((p) => {
+            const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
+            if (p.matchesPlayed === maxMatches) badgeTexts.push(`⚡ Antu Lapangan`);
+            const gelarText = badgeTexts.length ? badgeTexts.join("<br/>") : `<span class="muted">-</span>`;
+            return `
+              <tr>
+                <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}</td>
+                <td>${Math.round(p.currentRating)}</td>
+                <td>${p.matchesPlayed}</td>
+                <td>${p.wins}</td>
+                <td>${p.losses}</td>
+                <td>${p.winRate}%</td>
+                <td style="font-size:11px">${gelarText}</td>
+              </tr>`;
+          })
           .join("");
+        list.innerHTML = `
+          <div style="overflow-x:auto">
+            <table class="lb-table">
+              <thead>
+                <tr><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
       }
     } catch (err) {
       list.innerHTML = `<p class="error">${err.message}</p>`;
@@ -624,15 +640,37 @@ async function renderProfile(container) {
 
   try {
     const { player } = await api(`/players/${state.player.id}`);
+    const singleBadgesHtml = (player.singlesBadges || [])
+      .map((b) => `<span style="display:inline-block;background:#fff3cd;border:1px solid #f0d68a;border-radius:20px;padding:4px 12px;font-size:12px;margin:2px 4px 2px 0">${b.emoji} ${b.label}</span>`)
+      .join("");
+    const doubleBadgesHtml = (player.doublesBadges || [])
+      .map((b) => `<span style="display:inline-block;background:#fff3cd;border:1px solid #f0d68a;border-radius:20px;padding:4px 12px;font-size:12px;margin:2px 4px 2px 0">${b.emoji} ${b.label}</span>`)
+      .join("");
+
     wrap.querySelector("#profile-stats").innerHTML = `
-      <div class="row"><span><strong>Single</strong></span><span></span></div>
-      <div class="row"><span>Rating</span><span>${Math.round(player.currentRating)}</span></div>
-      <div class="row"><span>Jumlah match</span><span>${player.matchesPlayed}</span></div>
-      <div class="row"><span>Status</span><span>${player.isProvisional ? "Provisional" : "Stabil"}</span></div>
-      <div class="row" style="margin-top:0.5rem"><span><strong>Ganda</strong></span><span></span></div>
-      <div class="row"><span>Rating</span><span>${Math.round(player.doublesRating)}</span></div>
-      <div class="row"><span>Jumlah match</span><span>${player.doublesMatchesPlayed}</span></div>
-      <div class="row"><span>Status</span><span>${player.doublesIsProvisional ? "Provisional" : "Stabil"}</span></div>
+      <div style="background:linear-gradient(135deg,#1a1a1a,#3a3a3a);border-radius:14px;padding:1.25rem;color:#fff;margin-bottom:1rem">
+        <div style="font-size:13px;opacity:0.7;margin-bottom:8px">KARTU STATISTIK</div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <div style="font-size:11px;opacity:0.7">Single</div>
+            <div style="font-size:22px;font-weight:600">${Math.round(player.currentRating)}</div>
+            <div style="font-size:11px;opacity:0.8">${player.matchesPlayed}x main &middot; ${player.singlesWins}M-${player.singlesLosses}K &middot; ${player.singlesWinRate}%</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;opacity:0.7">Ganda</div>
+            <div style="font-size:22px;font-weight:600">${Math.round(player.doublesRating)}</div>
+            <div style="font-size:11px;opacity:0.8">${player.doublesMatchesPlayed}x main &middot; ${player.doublesWins}M-${player.doublesLosses}K &middot; ${player.doublesWinRate}%</div>
+          </div>
+        </div>
+        ${singleBadgesHtml || doubleBadgesHtml ? `
+          <div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:10px;margin-top:4px">
+            ${singleBadgesHtml ? `<div style="margin-bottom:6px">${singleBadgesHtml}</div>` : ""}
+            ${doubleBadgesHtml ? `<div>${doubleBadgesHtml}</div>` : ""}
+          </div>
+        ` : `<div style="font-size:12px;opacity:0.6;border-top:1px solid rgba(255,255,255,0.2);padding-top:10px">Belum ada gelar. Terus main untuk dapat gelar!</div>`}
+      </div>
+      <div class="row"><span>Status Single</span><span>${player.isProvisional ? "Provisional" : "Stabil"}</span></div>
+      <div class="row"><span>Status Ganda</span><span>${player.doublesIsProvisional ? "Provisional" : "Stabil"}</span></div>
     `;
   } catch (err) {
     wrap.querySelector("#profile-stats").innerHTML = `<p class="error">${err.message}</p>`;
@@ -651,7 +689,8 @@ async function renderProfile(container) {
           const won = m.winner === state.player.name;
           const opponent = won ? m.loser : m.winner;
           const change = won ? m.ratingWinnerChange : m.ratingLoserChange;
-          const changeText = change != null ? (change >= 0 ? `+${Math.round(change)}` : Math.round(change)) : m.status;
+          const statusLabel = { pending: "Menunggu konfirmasi", disputed: "Dibatalkan", expired: "Kedaluwarsa" };
+          const changeText = change != null ? (change >= 0 ? `+${Math.round(change)}` : Math.round(change)) : (statusLabel[m.status] || m.status);
           return `<div class="row"><span>${won ? "Menang" : "Kalah"} vs ${opponent} (${m.score})</span><span>${changeText}</span></div>`;
         })
         .join("");
