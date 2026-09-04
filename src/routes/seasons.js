@@ -114,54 +114,58 @@ router.post("/admin/end-season", requireAuth, requireAdmin, async (req, res) => 
 
   const players = await prisma.player.findMany({ where: { isActive: true } });
 
-  await prisma.$transaction(async (tx) => {
-    // 1. Arsipkan statistik tiap pemain ke season_records
-    for (const p of players) {
-      const [singlesStats, doublesStats] = await Promise.all([
-        computeSinglesStats(tx, p.id, currentSeason.startedAt),
-        computeDoublesStats(tx, p.id, currentSeason.startedAt),
-      ]);
-      await tx.seasonRecord.upsert({
-        where: { seasonId_playerId: { seasonId: currentSeason.id, playerId: p.id } },
-        update: {},
-        create: {
-          seasonId: currentSeason.id,
-          playerId: p.id,
-          playerName: p.name,
-          singlesRating: p.currentRating,
-          singlesMatchesPlayed: singlesStats.matchesPlayed,
-          singlesWins: singlesStats.wins,
-          singlesLosses: singlesStats.losses,
-          doublesRating: p.doublesRating,
-          doublesMatchesPlayed: doublesStats.matchesPlayed,
-          doublesWins: doublesStats.wins,
-          doublesLosses: doublesStats.losses,
+  try {
+    await prisma.$transaction(async (tx) => {
+      // 1. Arsipkan statistik tiap pemain ke season_records
+      for (const p of players) {
+        const [singlesStats, doublesStats] = await Promise.all([
+          computeSinglesStats(tx, p.id, currentSeason.startedAt),
+          computeDoublesStats(tx, p.id, currentSeason.startedAt),
+        ]);
+        await tx.seasonRecord.upsert({
+          where: { seasonId_playerId: { seasonId: currentSeason.id, playerId: p.id } },
+          update: {},
+          create: {
+            seasonId: currentSeason.id,
+            playerId: p.id,
+            playerName: p.name,
+            singlesRating: p.currentRating,
+            singlesMatchesPlayed: singlesStats.matchesPlayed,
+            singlesWins: singlesStats.wins,
+            singlesLosses: singlesStats.losses,
+            doublesRating: p.doublesRating,
+            doublesMatchesPlayed: doublesStats.matchesPlayed,
+            doublesWins: doublesStats.wins,
+            doublesLosses: doublesStats.losses,
+          },
+        });
+      }
+
+      // 2. Tutup season sekarang
+      await tx.season.update({ where: { id: currentSeason.id }, data: { isActive: false, endedAt: new Date() } });
+
+      // 3. Buat season baru
+      const newSeason = await tx.season.create({
+        data: { name: newSeasonName || `Season ${new Date().getFullYear() + 1}` },
+      });
+
+      // 4. Reset rating semua pemain ke 1500
+      await tx.player.updateMany({
+        data: {
+          currentRating: 1500,
+          matchesPlayed: 0,
+          isProvisional: true,
+          doublesRating: 1500,
+          doublesMatchesPlayed: 0,
+          doublesIsProvisional: true,
         },
       });
-    }
 
-    // 2. Tutup season sekarang
-    await tx.season.update({ where: { id: currentSeason.id }, data: { isActive: false, endedAt: new Date() } });
-
-    // 3. Buat season baru
-    const newSeason = await tx.season.create({
-      data: { name: newSeasonName || `Season ${new Date().getFullYear() + 1}` },
-    });
-
-    // 4. Reset rating semua pemain ke 1500
-    await tx.player.updateMany({
-      data: {
-        currentRating: 1500,
-        matchesPlayed: 0,
-        isProvisional: true,
-        doublesRating: 1500,
-        doublesMatchesPlayed: 0,
-        doublesIsProvisional: true,
-      },
-    });
-
-    return newSeason;
-  });
+      return newSeason;
+    }, { timeout: 30000, maxWait: 10000 });
+  } catch (e) {
+    return res.status(500).json({ error: { code: "END_SEASON_FAILED", message: `Gagal mengakhiri season: ${e.message}` } });
+  }
 
   res.json({ message: `Season "${currentSeason.name}" diarsipkan. Season baru dimulai, semua rating direset ke 1500.` });
 });
