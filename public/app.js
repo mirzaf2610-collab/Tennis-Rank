@@ -633,7 +633,7 @@ async function renderRules(container) {
       <p style="font-size:16px;line-height:1.7">
         Agar hasil pertandingan tercatat di sistem, pastikan kamu dan lawan sudah terdaftar.<br/>
         Sepakati dulu dengan lawan apakah hasilnya akan dicatat atau tidak di aplikasi.<br/>
-        Setelah tanding, input hasilnya di sistem, rank akan di Update.
+        Setelah tanding, input hasilnya di sistem, Point akan di terpdate setelah konfirmasi (Ingatkan lawan untuk konfirmasi di Aplikasi).
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
