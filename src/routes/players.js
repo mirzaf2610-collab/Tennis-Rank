@@ -4,6 +4,7 @@ const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { MIN_MATCHES_LEADERBOARD } = require("../elo");
 const { uploadAvatar } = require("../supabaseStorage");
+const { computeSinglesStats, computeDoublesStats, buildBadges } = require("../achievements");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -28,19 +29,13 @@ router.get("/leaderboard", async (req, res) => {
     select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true },
   });
 
-  const playerIds = players.map((p) => p.id);
-  const winCounts = await prisma.match.groupBy({
-    by: ["winnerId"],
-    where: { status: "confirmed", winnerId: { in: playerIds } },
-    _count: { winnerId: true },
-  });
-  const winsById = Object.fromEntries(winCounts.map((w) => [w.winnerId, w._count.winnerId]));
-
-  let leaderboard = players.map((p) => {
-    const wins = winsById[p.id] || 0;
-    const winRate = p.matchesPlayed > 0 ? Math.round((wins / p.matchesPlayed) * 1000) / 10 : 0;
-    return { ...p, wins, losses: p.matchesPlayed - wins, winRate };
-  });
+  let leaderboard = await Promise.all(
+    players.map(async (p) => {
+      const stats = await computeSinglesStats(prisma, p.id);
+      const badges = buildBadges(stats);
+      return { ...p, wins: stats.wins, losses: stats.losses, winRate: stats.winRate, badges };
+    })
+  );
 
   if (sortBy === "matches") {
     leaderboard.sort((a, b) => b.matchesPlayed - a.matchesPlayed);
@@ -93,7 +88,25 @@ router.get("/players/:id", async (req, res) => {
   if (!player) {
     return res.status(404).json({ error: { code: "PLAYER_NOT_FOUND", message: "Pemain tidak ditemukan" } });
   }
-  res.json({ player });
+
+  const [singlesStats, doublesStats] = await Promise.all([
+    computeSinglesStats(prisma, id),
+    computeDoublesStats(prisma, id),
+  ]);
+
+  res.json({
+    player: {
+      ...player,
+      singlesWins: singlesStats.wins,
+      singlesLosses: singlesStats.losses,
+      singlesWinRate: singlesStats.winRate,
+      singlesBadges: buildBadges(singlesStats),
+      doublesWins: doublesStats.wins,
+      doublesLosses: doublesStats.losses,
+      doublesWinRate: doublesStats.winRate,
+      doublesBadges: buildBadges(doublesStats),
+    },
+  });
 });
 
 // GET /api/players - list semua pemain aktif (untuk pilih lawan saat submit match)
@@ -137,7 +150,7 @@ router.get("/players/me/pending-confirmations", requireAuth, async (req, res) =>
     .map((m) => {
       const isWinner = m.winnerId === req.playerId;
       const opponent = isWinner ? m.loser.name : m.winner.name;
-      const score = `6-${m.loserGames}`;
+      const score = `${m.targetGames}-${m.loserGames}`;
       return {
         matchId: m.id,
         opponent,

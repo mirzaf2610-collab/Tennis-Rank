@@ -2,6 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD } = require("../elo");
+const { computeDoublesStats, buildBadges } = require("../achievements");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -15,43 +16,24 @@ router.get("/doubles/leaderboard", async (req, res) => {
     select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true },
   });
 
-  const playerIds = players.map((p) => p.id);
-  const matches = await prisma.doublesMatch.findMany({
-    where: {
-      status: "confirmed",
-      OR: [
-        { team1Player1Id: { in: playerIds } }, { team1Player2Id: { in: playerIds } },
-        { team2Player1Id: { in: playerIds } }, { team2Player2Id: { in: playerIds } },
-      ],
-    },
-    select: { team1Player1Id: true, team1Player2Id: true, team2Player1Id: true, team2Player2Id: true, winningTeam: true },
-  });
-
-  const winsById = {};
-  for (const m of matches) {
-    const team1Ids = [m.team1Player1Id, m.team1Player2Id];
-    const team2Ids = [m.team2Player1Id, m.team2Player2Id];
-    const winnerIds = m.winningTeam === 1 ? team1Ids : team2Ids;
-    for (const id of winnerIds) {
-      if (playerIds.includes(id)) winsById[id] = (winsById[id] || 0) + 1;
-    }
-  }
-
-  let leaderboard = players.map((p) => {
-    const wins = winsById[p.id] || 0;
-    const winRate = p.doublesMatchesPlayed > 0 ? Math.round((wins / p.doublesMatchesPlayed) * 1000) / 10 : 0;
-    return {
-      id: p.id,
-      photoUrl: p.photoUrl,
-      name: p.name,
-      currentRating: p.doublesRating,
-      matchesPlayed: p.doublesMatchesPlayed,
-      isProvisional: p.doublesIsProvisional,
-      wins,
-      losses: p.doublesMatchesPlayed - wins,
-      winRate,
-    };
-  });
+  let leaderboard = await Promise.all(
+    players.map(async (p) => {
+      const stats = await computeDoublesStats(prisma, p.id);
+      const badges = buildBadges(stats);
+      return {
+        id: p.id,
+        photoUrl: p.photoUrl,
+        name: p.name,
+        currentRating: p.doublesRating,
+        matchesPlayed: p.doublesMatchesPlayed,
+        isProvisional: p.doublesIsProvisional,
+        wins: stats.wins,
+        losses: stats.losses,
+        winRate: stats.winRate,
+        badges,
+      };
+    })
+  );
 
   if (sortBy === "matches") {
     leaderboard.sort((a, b) => b.matchesPlayed - a.matchesPlayed);
@@ -133,7 +115,7 @@ router.post("/doubles/matches/:id/confirm", requireAuth, async (req, res) => {
         err.code = "MATCH_ALREADY_CONFIRMED"; err.status = 409; throw err;
       }
       if (match.status === "disputed") {
-        const err = new Error("Match sedang disputed, menunggu admin");
+        const err = new Error("Match ini sudah dibatalkan (ditolak salah satu pihak). Submit ulang match baru kalau perlu dicatat lagi.");
         err.code = "MATCH_DISPUTED"; err.status = 409; throw err;
       }
 
@@ -259,7 +241,7 @@ router.post("/doubles/matches/:id/reject", requireAuth, async (req, res) => {
   }
 
   await prisma.doublesMatch.update({ where: { id: matchId }, data: { status: "disputed", rejectReason: reason } });
-  res.json({ matchId, status: "disputed" });
+  res.json({ matchId, status: "disputed", message: "Match dibatalkan. Kalau perlu, submit ulang match baru dengan skor yang benar." });
 });
 
 // GET /api/doubles/matches/pending-for-me
