@@ -1,4 +1,14 @@
 const API = "/api";
+
+// Daftarkan service worker supaya browser mau menawarkan "Install App" (PWA)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.log("Service worker gagal didaftarkan:", err);
+    });
+  });
+}
+
 let state = { token: localStorage.getItem("token"), player: null, page: "leaderboard" };
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -88,11 +98,11 @@ async function renderLogin(container) {
         <button data-mode="register">Daftar</button>
       </div>
       <div id="name-field" style="display:none">
-        <label>Nama Lengkap</label>
-        <input id="f-name" type="text" placeholder="Isi Nama lengkap (akan tampil di tabel rank)" />
+        <label>Nama</label>
+        <input id="f-name" type="text" placeholder="Nama lengkap" />
       </div>
       <label>Email</label>
-      <input id="f-email" type="email" placeholder="Isi Email" />
+      <input id="f-email" type="email" placeholder="nama@pusri.co.id" />
       <label>Password</label>
       <input id="f-password" type="password" placeholder="Minimal 6 karakter" />
       <div id="f-error" class="error" style="display:none"></div>
@@ -630,25 +640,15 @@ async function renderRules(container) {
     <div class="card">
       <h2>Aturan Main</h2>
 
-      <p style="font-size:16px;line-height:1.7">
-      Main → Catat → Konfirmasi → Poin Bertambah!<br/>
-      Pastikan kamu dan lawan sudah terdaftar di Tennis-Rank.<br/>
-      Sebelum bermain, sepakati apakah pertandingan akan dicatat di aplikasi atau tidak.<br/><br/>
-      Setelah pertandingan:<br/>
-      Input hasil → Lawan konfirmasi → Poin ter-update otomatis.<br/>
-      🔔 Jangan lupa ingatkan lawan untuk konfirmasi hasil pertandingan di aplikasi!
-      </p>
-
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
       <p style="font-size:16px;line-height:1.7">
-        Pendaftaran terbuka untuk Seluruh Anggota PSP Tennis Club (Karyawan,TKNO, Coach, Caddy dan yang sering main di bersama Tim PSP Tennis Club)
-        Daftar akun → verifikasi email → tunggu persetujuan admin . Baru setelah disetujui, akun bisa dipakai Login.
+        Daftar akun → verifikasi email → tunggu persetujuan admin komunitas. Baru setelah disetujui, akun bisa dipakai Login.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">2. Format Pertandingan</h3>
       <p style="font-size:16px;line-height:1.7">
-        <strong>Single:</strong> bisa pilih format First to 4, 6 (standar), atau 8 game, .
-        Format game lebih pendek otomatis dapat poin lebih kecil dibanding format standar, meski dominasinya sama.<br/><br/>
+        <strong>Single:</strong> bisa pilih format First to 4, 6 (standar), atau 8 game, tanpa deuce/tiebreak.
+        Format lebih pendek otomatis dapat poin lebih kecil dibanding format standar, meski dominasinya sama.<br/><br/>
         <strong>Ganda:</strong> format tetap First to 6, tidak ada pilihan format.
       </p>
 
@@ -657,14 +657,12 @@ async function renderRules(container) {
         Semua mulai dari rating 1500. Naik-turun tergantung: seberapa kuat lawan (menang lawan lebih kuat = poin lebih besar),
         seberapa telak kemenangan (6-0 lebih besar poinnya dari 6-5), dan status provisional (10 match pertama tiap orang,
         rating bergerak lebih cepat; setelah itu lebih stabil).<br/><br/>
-        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.<br/><br/>
-        Untuk menjaga keseimbangan kompetisi dan mempertahankan gap antar pemain, poin akan di-reset pada setiap awal season baru (akhir tahun). <br/>
-        Namun, seluruh data dan riwayat poin dari season sebelumnya tetap tersimpan dan dapat dilihat kembali dengan memilih season yang diinginkan..
+        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">4. Konfirmasi Hasil Match</h3>
       <p style="font-size:16px;line-height:1.7">
-        <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak).<br/>
+        <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak) sebelum rating berubah.<br/>
         <strong>Ganda:</strong> cukup 1 wakil dari tiap tim yang konfirmasi (total 2 orang, bebas siapa saja).<br/><br/>
         Kalau ditolak salah satu pihak, match otomatis dibatalkan (tidak mempengaruhi rating). Submit ulang kalau perlu dicatat lagi.<br/><br/>
         Kalau tidak direspon sama sekali dalam <strong>7 hari</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
@@ -673,8 +671,8 @@ async function renderRules(container) {
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
-        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil anda
-        dan di tabel ranking. Kalau sudah 5x, akun otomatis terblokir dan hanya bisa dibuka kembali oleh admin.
+        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil Anda
+        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis diblokir dan hanya bisa dibuka kembali oleh admin.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
@@ -693,7 +691,7 @@ async function renderRules(container) {
         🐐 <strong>GOAT</strong> — sedang menang 10x beruntun<br/>
         🔥🔥 <strong>Super Unbeaten</strong> — sedang menang 5x beruntun<br/>
         ✅ <strong>Unbeaten</strong> — sedang menang 3x beruntun<br/>
-        😅 <strong>Loser</strong> — sedang kalah 3x beruntun<br/>
+        😅 <strong>Looser</strong> — sedang kalah 3x beruntun<br/>
         🗡️ <strong>Giant Slayer</strong> — pernah menang lawan yang rating-nya jauh di atas<br/>
         ⚡ <strong>Antu Lapangan</strong> — jumlah main terbanyak saat ini
       </p>
@@ -702,6 +700,7 @@ async function renderRules(container) {
       <p style="font-size:16px;line-height:1.9">
         ✅ Isi skor jujur sesuai kejadian sebenarnya<br/>
         ✅ Segera konfirmasi kalau dapat notifikasi hasil match<br/>
+        ❌ Jangan sengaja kalah biar rating turun terus cari lawan gampang<br/>
         ✅ Tetap sportif — ini buat seru-seruan bareng, bukan ajang gengsi
       </p>
 
@@ -711,7 +710,7 @@ async function renderRules(container) {
 
       <p class="muted" style="font-size:14px;margin-top:1rem;border-top:1px solid #eee;padding-top:1rem;line-height:1.6">
         Aplikasi ini khusus internal PSP Tennis Club. Kalau ingin dibuatkan untuk komunitas lain,
-        silakan kontak admin via email PSPClub2026@gmail.com.
+        silakan kontak admin (MF) via email PSPClub2026@gmail.com.
       </p>
     </div>
   `);
@@ -870,7 +869,7 @@ async function render() {
 
   app.appendChild(el(`
     <div style="text-align:center;margin-top:1.5rem;padding-bottom:1rem">
-      <a href="#" id="rules-link" style="font-size:16px;color:#1a1a1a;text-decoration:underline;font-weight:600;background:#fff3cd;padding:8px 16px;border-radius:8px;display:inline-block">Aturan Main</a>
+      <a href="#" id="rules-link" style="font-size:12px;color:#777;text-decoration:underline">Aturan Main</a>
     </div>
   `));
   app.querySelector("#rules-link").addEventListener("click", (e) => {
