@@ -632,13 +632,14 @@ async function renderRules(container) {
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
       <p style="font-size:16px;line-height:1.7">
-        Daftar akun → verifikasi email → tunggu persetujuan admin komunitas. Baru setelah disetujui, akun bisa dipakai Login.
+        Pendaftaran terbuka untuk Seluruh Anggota PSP Tennis Club (Karyawan,TKNO, Coach, Caddy dan yang sering main di bersama Tim PSP Tennis Club)
+        Daftar akun → verifikasi email → tunggu persetujuan admin . Baru setelah disetujui, akun bisa dipakai Login.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">2. Format Pertandingan</h3>
       <p style="font-size:16px;line-height:1.7">
-        <strong>Single:</strong> bisa pilih format First to 4, 6 (standar), atau 8 game, tanpa deuce/tiebreak.
-        Format lebih pendek otomatis dapat poin lebih kecil dibanding format standar, meski dominasinya sama.<br/><br/>
+        <strong>Single:</strong> bisa pilih format First to 4, 6 (standar), atau 8 game, .
+        Format game lebih pendek otomatis dapat poin lebih kecil dibanding format standar, meski dominasinya sama.<br/><br/>
         <strong>Ganda:</strong> format tetap First to 6, tidak ada pilihan format.
       </p>
 
@@ -662,7 +663,7 @@ async function renderRules(container) {
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
         Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil Anda
-        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis diblokir dan hanya bisa dibuka kembali oleh admin.
+        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis terblokir dan hanya bisa dibuka kembali oleh admin.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
@@ -681,7 +682,7 @@ async function renderRules(container) {
         🐐 <strong>GOAT</strong> — sedang menang 10x beruntun<br/>
         🔥🔥 <strong>Super Unbeaten</strong> — sedang menang 5x beruntun<br/>
         ✅ <strong>Unbeaten</strong> — sedang menang 3x beruntun<br/>
-        😅 <strong>Looser</strong> — sedang kalah 3x beruntun<br/>
+        😅 <strong>Loser</strong> — sedang kalah 3x beruntun<br/>
         🗡️ <strong>Giant Slayer</strong> — pernah menang lawan yang rating-nya jauh di atas<br/>
         ⚡ <strong>Antu Lapangan</strong> — jumlah main terbanyak saat ini
       </p>
@@ -690,7 +691,6 @@ async function renderRules(container) {
       <p style="font-size:16px;line-height:1.9">
         ✅ Isi skor jujur sesuai kejadian sebenarnya<br/>
         ✅ Segera konfirmasi kalau dapat notifikasi hasil match<br/>
-        ❌ Jangan sengaja kalah biar rating turun terus cari lawan gampang<br/>
         ✅ Tetap sportif — ini buat seru-seruan bareng, bukan ajang gengsi
       </p>
 
