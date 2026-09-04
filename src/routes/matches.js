@@ -275,7 +275,7 @@ router.get("/matches", async (req, res) => {
     where,
     include: { winner: true, loser: true },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 5,
   });
 
   const result = matches.map((m) => ({
