@@ -82,6 +82,43 @@ function buildPlayerNameMap(players) {
   return { nameToId, options };
 }
 
+// Komponen pencarian nama pemain custom (bukan <datalist> bawaan browser, supaya
+// perilakunya konsisten baik di browser biasa maupun di PWA yang sudah di-install —
+// <datalist> sering tidak muncul sama sekali di iOS saat mode standalone/installed).
+function setupPlayerAutocomplete(wrapperEl, nameToId) {
+  const input = wrapperEl.querySelector("input");
+  const list = wrapperEl.querySelector(".autocomplete-list");
+  const names = Object.keys(nameToId);
+
+  function renderList(filterText) {
+    const q = filterText.trim().toLowerCase();
+    const matches = q ? names.filter((n) => n.toLowerCase().includes(q)) : names;
+    if (matches.length === 0) {
+      list.style.display = "none";
+      return;
+    }
+    list.innerHTML = matches
+      .slice(0, 8)
+      .map((n) => `<div class="autocomplete-item" data-name="${n}">${n}</div>`)
+      .join("");
+    list.style.display = "block";
+    list.querySelectorAll(".autocomplete-item").forEach((item) => {
+      // mousedown (bukan click) supaya kepilih SEBELUM event blur nutup dropdown-nya
+      item.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        input.value = item.dataset.name;
+        list.style.display = "none";
+      });
+    });
+  }
+
+  input.addEventListener("input", () => renderList(input.value));
+  input.addEventListener("focus", () => renderList(input.value));
+  input.addEventListener("blur", () => {
+    setTimeout(() => { list.style.display = "none"; }, 150);
+  });
+}
+
 function nav(active) {
   const items = [["leaderboard", "Ranking"]];
   if (state.token) {
@@ -339,8 +376,10 @@ async function renderSubmit(container) {
     <div class="card">
       <h2>Input hasil match</h2>
       <label>Lawan</label>
-      <input list="opponent-options" id="opponent-input" placeholder="Ketik nama lawan..." autocomplete="off" />
-      <datalist id="opponent-options"></datalist>
+      <div class="autocomplete-wrapper">
+        <input id="opponent-input" placeholder="Ketik nama lawan..." autocomplete="off" />
+        <div class="autocomplete-list"></div>
+      </div>
       <label>Format (main sampai berapa game)</label>
       <select id="target-games">
         <option value="4">First to 4</option>
@@ -374,9 +413,9 @@ async function renderSubmit(container) {
   try {
     const { players } = await api("/players");
     const others = players.filter((p) => p.id !== state.player.id);
-    const { nameToId, options } = buildPlayerNameMap(others);
+    const { nameToId } = buildPlayerNameMap(others);
     opponentNameToId = nameToId;
-    wrap.querySelector("#opponent-options").innerHTML = options.map((name) => `<option value="${name}">`).join("");
+    setupPlayerAutocomplete(wrap.querySelector(".autocomplete-wrapper"), nameToId);
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
@@ -422,12 +461,20 @@ async function renderSubmitDoubles(container) {
       <h2>Input hasil ganda</h2>
       <p class="muted">Anda otomatis jadi pemain 1 di Tim Anda.</p>
       <label>Partner Anda (Tim Anda)</label>
-      <input list="doubles-player-options" id="partner-input" placeholder="Ketik nama partner..." autocomplete="off" />
+      <div class="autocomplete-wrapper" id="partner-wrapper">
+        <input id="partner-input" placeholder="Ketik nama partner..." autocomplete="off" />
+        <div class="autocomplete-list"></div>
+      </div>
       <label>Lawan 1</label>
-      <input list="doubles-player-options" id="opp1-input" placeholder="Ketik nama lawan 1..." autocomplete="off" />
+      <div class="autocomplete-wrapper" id="opp1-wrapper">
+        <input id="opp1-input" placeholder="Ketik nama lawan 1..." autocomplete="off" />
+        <div class="autocomplete-list"></div>
+      </div>
       <label>Lawan 2</label>
-      <input list="doubles-player-options" id="opp2-input" placeholder="Ketik nama lawan 2..." autocomplete="off" />
-      <datalist id="doubles-player-options"></datalist>
+      <div class="autocomplete-wrapper" id="opp2-wrapper">
+        <input id="opp2-input" placeholder="Ketik nama lawan 2..." autocomplete="off" />
+        <div class="autocomplete-list"></div>
+      </div>
       <label>Tim mana yang menang?</label>
       <select id="who-won">
         <option value="team1">Tim saya menang</option>
@@ -447,9 +494,11 @@ async function renderSubmitDoubles(container) {
   try {
     const { players } = await api("/players");
     const others = players.filter((p) => p.id !== state.player.id);
-    const { nameToId, options } = buildPlayerNameMap(others);
+    const { nameToId } = buildPlayerNameMap(others);
     doublesNameToId = nameToId;
-    wrap.querySelector("#doubles-player-options").innerHTML = options.map((name) => `<option value="${name}">`).join("");
+    setupPlayerAutocomplete(wrap.querySelector("#partner-wrapper"), nameToId);
+    setupPlayerAutocomplete(wrap.querySelector("#opp1-wrapper"), nameToId);
+    setupPlayerAutocomplete(wrap.querySelector("#opp2-wrapper"), nameToId);
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
