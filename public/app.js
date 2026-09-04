@@ -14,11 +14,13 @@ let state = { token: localStorage.getItem("token"), player: null, page: "leaderb
 const urlParams = new URLSearchParams(window.location.search);
 const resetTokenFromUrl = urlParams.get("resetToken");
 const verifyTokenFromUrl = urlParams.get("verifyToken");
+const pageFromUrl = urlParams.get("page");
 if (resetTokenFromUrl) {
   state.page = "resetPassword";
-}
-if (verifyTokenFromUrl) {
+} else if (verifyTokenFromUrl) {
   state.page = "verifyEmail";
+} else if (pageFromUrl) {
+  state.page = pageFromUrl;
 }
 
 function saveAuth(token, player) {
@@ -717,6 +719,81 @@ async function renderRules(container) {
   container.appendChild(wrap);
 }
 
+// Ubah base64 VAPID public key jadi format yang dipahami browser
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+async function setupNotificationButton(wrap) {
+  const btn = wrap.querySelector("#notif-btn");
+  const errorEl = wrap.querySelector("#notif-error");
+
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    btn.textContent = "Notifikasi tidak didukung di browser ini";
+    btn.disabled = true;
+    return;
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  const existingSubscription = await registration.pushManager.getSubscription();
+
+  function setEnabledUI() {
+    btn.textContent = "🔔 Notifikasi Aktif — Klik untuk Matikan";
+    btn.classList.remove("secondary");
+  }
+  function setDisabledUI() {
+    btn.textContent = "🔕 Aktifkan Notifikasi";
+    btn.classList.add("secondary");
+  }
+
+  if (existingSubscription) {
+    setEnabledUI();
+  } else {
+    setDisabledUI();
+  }
+
+  btn.addEventListener("click", async () => {
+    errorEl.style.display = "none";
+    btn.disabled = true;
+    try {
+      const current = await registration.pushManager.getSubscription();
+      if (current) {
+        // Matikan notifikasi
+        await api("/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint: current.endpoint }) });
+        await current.unsubscribe();
+        setDisabledUI();
+      } else {
+        // Aktifkan notifikasi
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          errorEl.textContent = "Izin notifikasi ditolak. Aktifkan lewat pengaturan browser/HP kalau berubah pikiran.";
+          errorEl.style.display = "block";
+          btn.disabled = false;
+          return;
+        }
+        const { publicKey } = await api("/push/vapid-public-key");
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+        const subJson = subscription.toJSON();
+        await api("/push/subscribe", {
+          method: "POST",
+          body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys }),
+        });
+        setEnabledUI();
+      }
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+    btn.disabled = false;
+  });
+}
+
 async function renderProfile(container) {
   container.appendChild(nav("profile"));
   const wrap = el(`
@@ -735,6 +812,17 @@ async function renderProfile(container) {
   `);
   container.appendChild(wrap);
   wrap.querySelector("#logout-btn").addEventListener("click", logout);
+
+  const notifWrap = el(`
+    <div class="card">
+      <h2>Notifikasi</h2>
+      <p class="muted" style="font-size:13px">Dapat notifikasi langsung di HP saat ada match yang perlu Anda konfirmasi (perlu app sudah di-install ke homescreen).</p>
+      <div id="notif-error" class="error" style="display:none"></div>
+      <button id="notif-btn" class="btn secondary">Memeriksa status...</button>
+    </div>
+  `);
+  container.appendChild(notifWrap);
+  setupNotificationButton(notifWrap);
 
   wrap.querySelector("#photo-upload-btn").addEventListener("click", async () => {
     const fileInput = wrap.querySelector("#photo-input");
