@@ -50,6 +50,7 @@ model Player {
   doublesRatingHistory DoublesRatingHistory[]
   passwordResetTokens PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  pushSubscriptions PushSubscription[]
 
   @@map("players")
 }
@@ -190,4 +191,17 @@ model EmailVerificationToken {
   player Player @relation(fields: [playerId], references: [id])
 
   @@map("email_verification_tokens")
+}
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  playerId  Int      @map("player_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@map("push_subscriptions")
 }
