@@ -630,6 +630,12 @@ async function renderRules(container) {
     <div class="card">
       <h2>Aturan Main</h2>
 
+      <p style="font-size:16px;line-height:1.7">
+        Agar hasil pertandingan tercatat di sistem, pastikan kamu dan lawan sudah terdaftar.<br/>
+        Sepakati dulu dengan lawan apakah hasilnya akan dicatat atau tidak di aplikasi.<br/>
+        Setelah tanding, input hasilnya di sistem, rank akan di Update.
+      </p>
+
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
       <p style="font-size:16px;line-height:1.7">
         Pendaftaran terbuka untuk Seluruh Anggota PSP Tennis Club (Karyawan,TKNO, Coach, Caddy dan yang sering main di bersama Tim PSP Tennis Club)
