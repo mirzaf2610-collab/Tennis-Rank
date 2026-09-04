@@ -10,7 +10,8 @@ const prisma = new PrismaClient();
 
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
-  const { name, email, password, unitKerja } = req.body;
+  const { name, password, unitKerja } = req.body;
+  const email = req.body.email ? req.body.email.trim().toLowerCase() : req.body.email;
 
   if (!name || !email || !password) {
     return res.status(400).json({
@@ -55,7 +56,8 @@ router.post("/register", async (req, res) => {
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = req.body.email ? req.body.email.trim().toLowerCase() : req.body.email;
 
   if (!email || !password) {
     return res.status(400).json({
@@ -113,7 +115,8 @@ router.post("/login", async (req, res) => {
 
 // POST /api/auth/forgot-password
 router.post("/forgot-password", async (req, res) => {
-  const { email, appUrl } = req.body;
+  const { appUrl } = req.body;
+  const email = req.body.email ? req.body.email.trim().toLowerCase() : req.body.email;
   if (!email) {
     return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Email wajib diisi" } });
   }
@@ -189,7 +192,8 @@ router.post("/verify-email", async (req, res) => {
 
 // POST /api/auth/resend-verification
 router.post("/resend-verification", async (req, res) => {
-  const { email, appUrl } = req.body;
+  const { appUrl } = req.body;
+  const email = req.body.email ? req.body.email.trim().toLowerCase() : req.body.email;
   if (!email) {
     return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Email wajib diisi" } });
   }
