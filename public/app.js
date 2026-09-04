@@ -700,7 +700,7 @@ async function renderRules(container) {
 
       <p class="muted" style="font-size:14px;margin-top:1rem;border-top:1px solid #eee;padding-top:1rem;line-height:1.6">
         Aplikasi ini khusus internal PSP Tennis Club. Kalau ingin dibuatkan untuk komunitas lain,
-        silakan kontak admin (MF) via email PSPClub2026@gmail.com.
+        silakan kontak admin via email PSPClub2026@gmail.com.
       </p>
     </div>
   `);
