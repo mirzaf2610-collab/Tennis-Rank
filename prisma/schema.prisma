@@ -57,6 +57,7 @@ model Match {
   winnerId            Int         @map("winner_id")
   loserId             Int         @map("loser_id")
   loserGames          Int         @map("loser_games")
+  targetGames         Int         @default(6) @map("target_games")
 
   ratingWinnerBefore  Decimal?    @map("rating_winner_before") @db.Decimal(7, 2)
   ratingLoserBefore   Decimal?    @map("rating_loser_before") @db.Decimal(7, 2)
@@ -109,7 +110,7 @@ model DoublesMatch {
   team2Player2Id Int @map("team2_player2_id")
 
   winningTeam   Int      @map("winning_team") // 1 atau 2
-  loserGames    Int      @map("loser_games")  // 0-5
+  loserGames    Int      @map("loser_games")  // 0-5, format tetap first-to-6
 
   team1RatingBefore Decimal? @map("team1_rating_before") @db.Decimal(7, 2)
   team2RatingBefore Decimal? @map("team2_rating_before") @db.Decimal(7, 2)
