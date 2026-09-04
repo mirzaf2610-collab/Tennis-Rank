@@ -263,6 +263,9 @@ async function renderLeaderboard(container) {
             const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
             if (p.matchesPlayed === maxMatches) badgeTexts.push(`⚡ Antu Lapangan`);
             const gelarText = badgeTexts.length ? badgeTexts.join("<br/>") : `<span class="muted">-</span>`;
+            const noRespText = p.noResponseCount > 0
+              ? `<span style="color:#c62828">${p.noResponseCount}x</span>`
+              : `<span class="muted">0</span>`;
             return `
               <tr>
                 <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}</td>
@@ -271,6 +274,7 @@ async function renderLeaderboard(container) {
                 <td>${p.wins}</td>
                 <td>${p.losses}</td>
                 <td>${p.winRate}%</td>
+                <td>${noRespText}</td>
                 <td style="font-size:11px">${gelarText}</td>
               </tr>`;
           })
@@ -279,7 +283,7 @@ async function renderLeaderboard(container) {
           <div style="overflow-x:auto">
             <table class="lb-table">
               <thead>
-                <tr><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th></tr>
+                <tr><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Tdk Respon</th><th>Gelar</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
@@ -587,6 +591,120 @@ async function renderAdmin(container) {
   } catch (err) {
     wrap.querySelector("#pending-players-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
+
+  const bannedWrap = el(`<div class="card"><h2>Akun Diblokir (Tidak Merespon 5x+)</h2><div id="banned-players-list">Memuat...</div></div>`);
+  container.appendChild(bannedWrap);
+  try {
+    const { players } = await api("/admin/banned-players");
+    const list = bannedWrap.querySelector("#banned-players-list");
+    if (players.length === 0) {
+      list.innerHTML = `<p class="muted">Tidak ada akun yang diblokir.</p>`;
+      return;
+    }
+    list.innerHTML = "";
+    players.forEach((p) => {
+      const item = el(`
+        <div class="row" style="flex-direction:column; align-items:stretch; gap:6px;">
+          <div><strong>${p.name}</strong> — ${p.email} (${p.noResponseCount}x tidak konfirmasi)</div>
+          <button class="btn" style="margin-top:0" data-action="unban" data-id="${p.id}">Buka Blokir</button>
+        </div>
+      `);
+      item.querySelector('[data-action="unban"]').addEventListener("click", async () => {
+        try {
+          await api(`/admin/unban/${p.id}`, { method: "POST" });
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+      list.appendChild(item);
+    });
+  } catch (err) {
+    bannedWrap.querySelector("#banned-players-list").innerHTML = `<p class="error">${err.message}</p>`;
+  }
+}
+
+async function renderRules(container) {
+  container.appendChild(nav("rules"));
+  const wrap = el(`
+    <div class="card">
+      <h2>Aturan Main</h2>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">1. Cara Daftar</h3>
+      <p style="font-size:13px;line-height:1.6">
+        Daftar akun → verifikasi email → tunggu persetujuan admin komunitas. Baru setelah disetujui, akun bisa dipakai Login.
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">2. Format Pertandingan</h3>
+      <p style="font-size:13px;line-height:1.6">
+        <strong>Single:</strong> bisa pilih format First to 4, 6 (standar), atau 8 game, tanpa deuce/tiebreak.
+        Format lebih pendek otomatis dapat poin lebih kecil dibanding format standar, meski dominasinya sama.<br/><br/>
+        <strong>Ganda:</strong> format tetap First to 6, tidak ada pilihan format.
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">3. Sistem Poin (ELO)</h3>
+      <p style="font-size:13px;line-height:1.6">
+        Semua mulai dari rating 1500. Naik-turun tergantung: seberapa kuat lawan (menang lawan lebih kuat = poin lebih besar),
+        seberapa telak kemenangan (6-0 lebih besar poinnya dari 6-5), dan status provisional (10 match pertama tiap orang,
+        rating bergerak lebih cepat; setelah itu lebih stabil).<br/><br/>
+        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">4. Konfirmasi Hasil Match</h3>
+      <p style="font-size:13px;line-height:1.6">
+        <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak) sebelum rating berubah.<br/>
+        <strong>Ganda:</strong> cukup 1 wakil dari tiap tim yang konfirmasi (total 2 orang, bebas siapa saja).<br/><br/>
+        Kalau ditolak salah satu pihak, match otomatis dibatalkan (tidak mempengaruhi rating). Submit ulang kalau perlu dicatat lagi.<br/><br/>
+        Kalau tidak direspon sama sekali dalam <strong>7 hari</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
+        tapi poinnya cuma <strong>setengah</strong> dari perhitungan normal.
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">5. Sanksi Tidak Merespon</h3>
+      <p style="font-size:13px;line-height:1.6">
+        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil Anda
+        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis diblokir dan hanya bisa dibuka kembali oleh admin.
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">6. Leaderboard</h3>
+      <p style="font-size:13px;line-height:1.6">
+        Minimal sudah main 3 kali (Single dan Ganda dihitung terpisah) baru muncul di papan ranking.
+        Bisa diurutkan berdasarkan Poin, Jumlah Main, atau Win Rate.
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">7. Gelar & Prestasi</h3>
+      <p style="font-size:13px;line-height:1.6">
+        🏆 <strong>Tak Terkalahkan</strong> — win rate 100% (min. 3 match)<br/>
+        👑 <strong>Legenda</strong> — win rate ≥70% & main ≥25<br/>
+        🌟 <strong>Superstar</strong> — win rate ≥70%, main <25<br/>
+        🔥 <strong>Konsisten</strong> — win rate ≥60% & main ≥15<br/>
+        💪 <strong>Pejuang Lapangan</strong> — main ≥20, win rate <40%<br/>
+        🐐 <strong>GOAT</strong> — sedang menang 10x beruntun<br/>
+        🔥🔥 <strong>Super Unbeaten</strong> — sedang menang 5x beruntun<br/>
+        ✅ <strong>Unbeaten</strong> — sedang menang 3x beruntun<br/>
+        😅 <strong>Looser</strong> — sedang kalah 3x beruntun<br/>
+        🗡️ <strong>Giant Slayer</strong> — pernah menang lawan yang rating-nya jauh di atas<br/>
+        ⚡ <strong>Antu Lapangan</strong> — jumlah main terbanyak saat ini
+      </p>
+
+      <h3 style="margin-top:1rem;margin-bottom:0.25rem;font-size:15px">8. Etika Bermain</h3>
+      <p style="font-size:13px;line-height:1.6">
+        ✅ Isi skor jujur sesuai kejadian sebenarnya<br/>
+        ✅ Segera konfirmasi kalau dapat notifikasi hasil match<br/>
+        ❌ Jangan sengaja kalah biar rating turun terus cari lawan gampang<br/>
+        ✅ Tetap sportif — ini buat seru-seruan bareng, bukan ajang gengsi
+      </p>
+
+      <p class="muted" style="font-size:12px;margin-top:1rem">
+        Rank ini hanya untuk seru-seruan dan motivasi main, bukan patokan skill yang presisi.
+      </p>
+
+      <p class="muted" style="font-size:12px;margin-top:0.75rem;border-top:1px solid #eee;padding-top:0.75rem">
+        Aplikasi ini khusus internal PSP Tennis Club. Kalau ingin dibuatkan untuk komunitas lain,
+        silakan kontak admin (MF) via email PSPClub2026@gmail.com.
+      </p>
+    </div>
+  `);
+  container.appendChild(wrap);
 }
 
 async function renderProfile(container) {
@@ -712,26 +830,43 @@ async function render() {
 
   if (state.token && !state.player) loadAuth();
 
-  if (state.page === "resetPassword") return renderResetPassword(app);
-  if (state.page === "verifyEmail") return renderVerifyEmail(app);
-
-  const protectedPages = ["submit", "submitDoubles", "confirm", "profile", "admin"];
-  if (!state.token && protectedPages.includes(state.page)) {
+  if (state.page === "resetPassword") {
+    await renderResetPassword(app);
+  } else if (state.page === "verifyEmail") {
+    await renderVerifyEmail(app);
+  } else if (state.page === "rules") {
+    await renderRules(app);
+  } else if (!state.token && ["submit", "submitDoubles", "confirm", "profile", "admin"].includes(state.page)) {
     // Perlu login untuk halaman ini
     app.appendChild(nav("login"));
-    return renderLogin(app);
+    await renderLogin(app);
+  } else if (state.page === "login") {
+    app.appendChild(nav("login"));
+    await renderLogin(app);
+  } else if (state.page === "submit") {
+    await renderSubmit(app);
+  } else if (state.page === "submitDoubles") {
+    await renderSubmitDoubles(app);
+  } else if (state.page === "confirm") {
+    await renderConfirm(app);
+  } else if (state.page === "profile") {
+    await renderProfile(app);
+  } else if (state.page === "admin") {
+    await renderAdmin(app);
+  } else {
+    await renderLeaderboard(app);
   }
 
-  if (state.page === "login") {
-    app.appendChild(nav("login"));
-    return renderLogin(app);
-  }
-  if (state.page === "submit") return renderSubmit(app);
-  if (state.page === "submitDoubles") return renderSubmitDoubles(app);
-  if (state.page === "confirm") return renderConfirm(app);
-  if (state.page === "profile") return renderProfile(app);
-  if (state.page === "admin") return renderAdmin(app);
-  return renderLeaderboard(app);
+  app.appendChild(el(`
+    <div style="text-align:center;margin-top:1.5rem;padding-bottom:1rem">
+      <a href="#" id="rules-link" style="font-size:12px;color:#777;text-decoration:underline">Aturan Main</a>
+    </div>
+  `));
+  app.querySelector("#rules-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    state.page = "rules";
+    render();
+  });
 }
 
 render();
