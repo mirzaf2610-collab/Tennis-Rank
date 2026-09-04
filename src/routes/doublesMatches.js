@@ -13,7 +13,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
 
   const players = await prisma.player.findMany({
     where: { isActive: true, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
-    select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true },
+    select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
   });
 
   let leaderboard = await Promise.all(
@@ -30,6 +30,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
         wins: stats.wins,
         losses: stats.losses,
         winRate: stats.winRate,
+        noResponseCount: p.noResponseCount,
         badges,
       };
     })
@@ -98,6 +99,78 @@ router.post("/doubles/matches", requireAuth, async (req, res) => {
   });
 });
 
+// Fungsi inti: terapkan hasil ELO ke match ganda & keempat pemain. Dipakai baik untuk konfirmasi
+// manual maupun auto-confirm setelah 7 hari (dengan halfPoints=true supaya poinnya dipotong setengah).
+async function applyDoublesEloAndConfirm(tx, match, { halfPoints = false } = {}) {
+  const matchId = match.id;
+  const ids = [match.team1Player1Id, match.team1Player2Id, match.team2Player1Id, match.team2Player2Id].sort((a, b) => a - b);
+  await tx.$executeRawUnsafe(`SELECT id FROM players WHERE id IN (${ids.join(",")}) FOR UPDATE`);
+
+  const [t1p1, t1p2, t2p1, t2p2] = await Promise.all([
+    tx.player.findUnique({ where: { id: match.team1Player1Id } }),
+    tx.player.findUnique({ where: { id: match.team1Player2Id } }),
+    tx.player.findUnique({ where: { id: match.team2Player1Id } }),
+    tx.player.findUnique({ where: { id: match.team2Player2Id } }),
+  ]);
+
+  const halfFactor = halfPoints ? 0.5 : 1;
+  const kFactors = {
+    t1p1: getKFactor(t1p1.doublesMatchesPlayed) * halfFactor,
+    t1p2: getKFactor(t1p2.doublesMatchesPlayed) * halfFactor,
+    t2p1: getKFactor(t2p1.doublesMatchesPlayed) * halfFactor,
+    t2p2: getKFactor(t2p2.doublesMatchesPlayed) * halfFactor,
+  };
+
+  const elo = calculateDoublesElo({
+    team1Player1Rating: t1p1.doublesRating,
+    team1Player2Rating: t1p2.doublesRating,
+    team2Player1Rating: t2p1.doublesRating,
+    team2Player2Rating: t2p2.doublesRating,
+    winningTeam: match.winningTeam,
+    loserGames: match.loserGames,
+    kFactors,
+  });
+
+  await tx.doublesMatch.update({
+    where: { id: matchId },
+    data: {
+      team1RatingBefore: elo.team1Rating,
+      team2RatingBefore: elo.team2Rating,
+      marginMultiplier: elo.marginMultiplier,
+      t1p1RatingBefore: t1p1.doublesRating, t1p1RatingAfter: elo.t1p1After,
+      t1p2RatingBefore: t1p2.doublesRating, t1p2RatingAfter: elo.t1p2After,
+      t2p1RatingBefore: t2p1.doublesRating, t2p1RatingAfter: elo.t2p1After,
+      t2p2RatingBefore: t2p2.doublesRating, t2p2RatingAfter: elo.t2p2After,
+      status: "confirmed",
+      confirmedAt: new Date(),
+    },
+  });
+
+  const players = [
+    { p: t1p1, after: elo.t1p1After },
+    { p: t1p2, after: elo.t1p2After },
+    { p: t2p1, after: elo.t2p1After },
+    { p: t2p2, after: elo.t2p2After },
+  ];
+  for (const { p, after } of players) {
+    await tx.player.update({
+      where: { id: p.id },
+      data: {
+        doublesRating: after,
+        doublesMatchesPlayed: { increment: 1 },
+        doublesIsProvisional: p.doublesMatchesPlayed + 1 < PROVISIONAL_THRESHOLD,
+      },
+    });
+  }
+  await tx.doublesRatingHistory.createMany({
+    data: players.map(({ p, after }) => ({
+      playerId: p.id, matchId, ratingBefore: p.doublesRating, ratingAfter: after,
+    })),
+  });
+
+  return elo;
+}
+
 // POST /api/doubles/matches/:id/confirm
 router.post("/doubles/matches/:id/confirm", requireAuth, async (req, res) => {
   const matchId = Number(req.params.id);
@@ -140,71 +213,8 @@ router.post("/doubles/matches/:id/confirm", requireAuth, async (req, res) => {
         return { status: "pending" };
       }
 
-      // Semua sudah konfirmasi -> lock & apply ELO
-      const ids = [updated.team1Player1Id, updated.team1Player2Id, updated.team2Player1Id, updated.team2Player2Id].sort((a, b) => a - b);
-      await tx.$executeRawUnsafe(`SELECT id FROM players WHERE id IN (${ids.join(",")}) FOR UPDATE`);
-
-      const [t1p1, t1p2, t2p1, t2p2] = await Promise.all([
-        tx.player.findUnique({ where: { id: updated.team1Player1Id } }),
-        tx.player.findUnique({ where: { id: updated.team1Player2Id } }),
-        tx.player.findUnique({ where: { id: updated.team2Player1Id } }),
-        tx.player.findUnique({ where: { id: updated.team2Player2Id } }),
-      ]);
-
-      const kFactors = {
-        t1p1: getKFactor(t1p1.doublesMatchesPlayed),
-        t1p2: getKFactor(t1p2.doublesMatchesPlayed),
-        t2p1: getKFactor(t2p1.doublesMatchesPlayed),
-        t2p2: getKFactor(t2p2.doublesMatchesPlayed),
-      };
-
-      const elo = calculateDoublesElo({
-        team1Player1Rating: t1p1.doublesRating,
-        team1Player2Rating: t1p2.doublesRating,
-        team2Player1Rating: t2p1.doublesRating,
-        team2Player2Rating: t2p2.doublesRating,
-        winningTeam: updated.winningTeam,
-        loserGames: updated.loserGames,
-        kFactors,
-      });
-
-      await tx.doublesMatch.update({
-        where: { id: matchId },
-        data: {
-          team1RatingBefore: elo.team1Rating,
-          team2RatingBefore: elo.team2Rating,
-          marginMultiplier: elo.marginMultiplier,
-          t1p1RatingBefore: t1p1.doublesRating, t1p1RatingAfter: elo.t1p1After,
-          t1p2RatingBefore: t1p2.doublesRating, t1p2RatingAfter: elo.t1p2After,
-          t2p1RatingBefore: t2p1.doublesRating, t2p1RatingAfter: elo.t2p1After,
-          t2p2RatingBefore: t2p2.doublesRating, t2p2RatingAfter: elo.t2p2After,
-          status: "confirmed",
-          confirmedAt: new Date(),
-        },
-      });
-
-      const players = [
-        { p: t1p1, after: elo.t1p1After },
-        { p: t1p2, after: elo.t1p2After },
-        { p: t2p1, after: elo.t2p1After },
-        { p: t2p2, after: elo.t2p2After },
-      ];
-      for (const { p, after } of players) {
-        await tx.player.update({
-          where: { id: p.id },
-          data: {
-            doublesRating: after,
-            doublesMatchesPlayed: { increment: 1 },
-            doublesIsProvisional: p.doublesMatchesPlayed + 1 < PROVISIONAL_THRESHOLD,
-          },
-        });
-      }
-      await tx.doublesRatingHistory.createMany({
-        data: players.map(({ p, after }) => ({
-          playerId: p.id, matchId, ratingBefore: p.doublesRating, ratingAfter: after,
-        })),
-      });
-
+      // Semua sudah konfirmasi -> apply ELO
+      const elo = await applyDoublesEloAndConfirm(tx, updated);
       return { status: "confirmed", elo };
     });
 
@@ -288,3 +298,4 @@ router.get("/doubles/matches/pending-for-me", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.applyDoublesEloAndConfirm = applyDoublesEloAndConfirm;

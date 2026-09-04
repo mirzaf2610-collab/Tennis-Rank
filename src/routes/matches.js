@@ -1,7 +1,7 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
-const { calculateElo, getKFactor, PROVISIONAL_THRESHOLD } = require("../elo");
+const { calculateElo, getKFactor, PROVISIONAL_THRESHOLD, isValidTargetGames, DEFAULT_TARGET_GAMES, MIN_TARGET_GAMES, MAX_TARGET_GAMES } = require("../elo");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -10,6 +10,7 @@ const prisma = new PrismaClient();
 // submittedBy diambil dari token (req.playerId), bukan dari body.
 router.post("/matches", requireAuth, async (req, res) => {
   const { winnerId, loserId, loserGames, matchDate } = req.body;
+  const targetGames = req.body.targetGames ?? DEFAULT_TARGET_GAMES;
   const submittedBy = req.playerId;
 
   if (winnerId == null || loserId == null || loserGames == null) {
@@ -22,9 +23,14 @@ router.post("/matches", requireAuth, async (req, res) => {
       error: { code: "SAME_PLAYER", message: "Pemenang dan yang kalah tidak boleh sama" },
     });
   }
-  if (loserGames < 0 || loserGames > 5 || !Number.isInteger(loserGames)) {
+  if (!isValidTargetGames(targetGames)) {
     return res.status(400).json({
-      error: { code: "INVALID_SCORE", message: "Skor game yang kalah harus 0-5" },
+      error: { code: "INVALID_TARGET_GAMES", message: `Format target game harus antara ${MIN_TARGET_GAMES} dan ${MAX_TARGET_GAMES}` },
+    });
+  }
+  if (loserGames < 0 || loserGames > targetGames - 1 || !Number.isInteger(loserGames)) {
+    return res.status(400).json({
+      error: { code: "INVALID_SCORE", message: `Skor game yang kalah harus 0-${targetGames - 1}` },
     });
   }
   if (submittedBy !== winnerId && submittedBy !== loserId) {
@@ -51,6 +57,7 @@ router.post("/matches", requireAuth, async (req, res) => {
       winnerId,
       loserId,
       loserGames,
+      targetGames,
       matchDate: matchDate ? new Date(matchDate) : new Date(),
       inputBy: submittedBy,
       confirmedByWinner: isWinnerSubmitting,
@@ -69,6 +76,74 @@ router.post("/matches", requireAuth, async (req, res) => {
 });
 
 // POST /api/matches/:id/confirm
+// Fungsi inti: terapkan hasil ELO ke match & kedua pemain. Dipakai baik untuk konfirmasi manual
+// maupun auto-confirm setelah 7 hari (dengan halfPoints=true supaya poinnya dipotong setengah).
+async function applyEloAndConfirm(tx, match, { halfPoints = false } = {}) {
+  const matchId = match.id;
+  const ids = [match.winnerId, match.loserId].sort((a, b) => a - b);
+  await tx.$executeRawUnsafe(`SELECT id FROM players WHERE id IN (${ids.join(",")}) FOR UPDATE`);
+
+  const winner = await tx.player.findUnique({ where: { id: match.winnerId } });
+  const loser = await tx.player.findUnique({ where: { id: match.loserId } });
+
+  let kWinner = getKFactor(winner.matchesPlayed);
+  let kLoser = getKFactor(loser.matchesPlayed);
+  if (halfPoints) {
+    kWinner = kWinner * 0.5;
+    kLoser = kLoser * 0.5;
+  }
+
+  const elo = calculateElo({
+    ratingWinner: winner.currentRating,
+    ratingLoser: loser.currentRating,
+    loserGames: match.loserGames,
+    targetGames: match.targetGames,
+    kFactorWinner: kWinner,
+    kFactorLoser: kLoser,
+  });
+
+  await tx.match.update({
+    where: { id: matchId },
+    data: {
+      ratingWinnerBefore: winner.currentRating,
+      ratingLoserBefore: loser.currentRating,
+      ratingWinnerAfter: elo.ratingWinnerAfter,
+      ratingLoserAfter: elo.ratingLoserAfter,
+      kFactorWinner: kWinner,
+      kFactorLoser: kLoser,
+      marginMultiplier: elo.marginMultiplier,
+      status: "confirmed",
+      confirmedAt: new Date(),
+    },
+  });
+
+  await tx.player.update({
+    where: { id: winner.id },
+    data: {
+      currentRating: elo.ratingWinnerAfter,
+      matchesPlayed: { increment: 1 },
+      isProvisional: winner.matchesPlayed + 1 < PROVISIONAL_THRESHOLD,
+    },
+  });
+  await tx.player.update({
+    where: { id: loser.id },
+    data: {
+      currentRating: elo.ratingLoserAfter,
+      matchesPlayed: { increment: 1 },
+      isProvisional: loser.matchesPlayed + 1 < PROVISIONAL_THRESHOLD,
+    },
+  });
+
+  await tx.ratingHistory.createMany({
+    data: [
+      { playerId: winner.id, matchId, ratingBefore: winner.currentRating, ratingAfter: elo.ratingWinnerAfter },
+      { playerId: loser.id, matchId, ratingBefore: loser.currentRating, ratingAfter: elo.ratingLoserAfter },
+    ],
+  });
+
+  return elo;
+}
+
 router.post("/matches/:id/confirm", requireAuth, async (req, res) => {
   const matchId = Number(req.params.id);
   const confirmingPlayerId = req.playerId;
@@ -89,7 +164,7 @@ router.post("/matches/:id/confirm", requireAuth, async (req, res) => {
         throw err;
       }
       if (match.status === "disputed") {
-        const err = new Error("Match sedang dalam status disputed, menunggu admin");
+        const err = new Error("Match ini sudah dibatalkan (ditolak salah satu pihak). Submit ulang match baru kalau perlu dicatat lagi.");
         err.code = "MATCH_DISPUTED";
         err.status = 409;
         throw err;
@@ -124,65 +199,7 @@ router.post("/matches/:id/confirm", requireAuth, async (req, res) => {
 
       // Kalau kedua pihak sudah konfirmasi, apply ELO update sekarang
       if (updated.confirmedByWinner && updated.confirmedByLoser) {
-        // Lock kedua baris pemain (row lock via raw query, urutan by id untuk cegah deadlock)
-        const ids = [updated.winnerId, updated.loserId].sort((a, b) => a - b);
-        await tx.$executeRawUnsafe(
-          `SELECT id FROM players WHERE id IN (${ids.join(",")}) FOR UPDATE`
-        );
-
-        const winner = await tx.player.findUnique({ where: { id: updated.winnerId } });
-        const loser = await tx.player.findUnique({ where: { id: updated.loserId } });
-
-        const kWinner = getKFactor(winner.matchesPlayed);
-        const kLoser = getKFactor(loser.matchesPlayed);
-
-        const elo = calculateElo({
-          ratingWinner: winner.currentRating,
-          ratingLoser: loser.currentRating,
-          loserGames: updated.loserGames,
-          kFactorWinner: kWinner,
-          kFactorLoser: kLoser,
-        });
-
-        await tx.match.update({
-          where: { id: matchId },
-          data: {
-            ratingWinnerBefore: winner.currentRating,
-            ratingLoserBefore: loser.currentRating,
-            ratingWinnerAfter: elo.ratingWinnerAfter,
-            ratingLoserAfter: elo.ratingLoserAfter,
-            kFactorWinner: kWinner,
-            kFactorLoser: kLoser,
-            marginMultiplier: elo.marginMultiplier,
-            status: "confirmed",
-            confirmedAt: new Date(),
-          },
-        });
-
-        await tx.player.update({
-          where: { id: winner.id },
-          data: {
-            currentRating: elo.ratingWinnerAfter,
-            matchesPlayed: { increment: 1 },
-            isProvisional: winner.matchesPlayed + 1 < PROVISIONAL_THRESHOLD,
-          },
-        });
-        await tx.player.update({
-          where: { id: loser.id },
-          data: {
-            currentRating: elo.ratingLoserAfter,
-            matchesPlayed: { increment: 1 },
-            isProvisional: loser.matchesPlayed + 1 < PROVISIONAL_THRESHOLD,
-          },
-        });
-
-        await tx.ratingHistory.createMany({
-          data: [
-            { playerId: winner.id, matchId, ratingBefore: winner.currentRating, ratingAfter: elo.ratingWinnerAfter },
-            { playerId: loser.id, matchId, ratingBefore: loser.currentRating, ratingAfter: elo.ratingLoserAfter },
-          ],
-        });
-
+        const elo = await applyEloAndConfirm(tx, updated);
         return { status: "confirmed", elo };
       }
 
@@ -233,7 +250,7 @@ router.post("/matches/:id/reject", requireAuth, async (req, res) => {
     data: { status: "disputed", rejectReason: reason },
   });
 
-  res.json({ matchId, status: "disputed" });
+  res.json({ matchId, status: "disputed", message: "Match dibatalkan. Kalau perlu, submit ulang match baru dengan skor yang benar." });
 });
 
 // GET /api/matches?player_id=X&status=Y
@@ -256,7 +273,7 @@ router.get("/matches", async (req, res) => {
     id: m.id,
     winner: m.winner.name,
     loser: m.loser.name,
-    score: `6-${m.loserGames}`,
+    score: `${m.targetGames}-${m.loserGames}`,
     status: m.status,
     ratingWinnerChange: m.ratingWinnerAfter && m.ratingWinnerBefore
       ? Number(m.ratingWinnerAfter) - Number(m.ratingWinnerBefore) : null,
@@ -269,3 +286,4 @@ router.get("/matches", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.applyEloAndConfirm = applyEloAndConfirm;

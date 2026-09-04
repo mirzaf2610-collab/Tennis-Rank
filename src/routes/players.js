@@ -26,7 +26,7 @@ router.get("/leaderboard", async (req, res) => {
 
   const players = await prisma.player.findMany({
     where: { isActive: true, isApproved: true, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
-    select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true },
+    select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true, noResponseCount: true },
   });
 
   let leaderboard = await Promise.all(

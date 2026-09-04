@@ -46,4 +46,26 @@ router.post("/admin/reject/:id", requireAuth, requireAdmin, async (req, res) => 
   res.json({ message: `Pendaftaran ${player.name} ditolak dan dihapus` });
 });
 
+// GET /api/admin/banned-players - daftar akun yang sedang diblokir
+router.get("/admin/banned-players", requireAuth, requireAdmin, async (req, res) => {
+  const players = await prisma.player.findMany({
+    where: { isBanned: true },
+    orderBy: { noResponseCount: "desc" },
+    select: { id: true, name: true, email: true, noResponseCount: true },
+  });
+  res.json({ players });
+});
+
+// POST /api/admin/unban/:id
+router.post("/admin/unban/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const player = await prisma.player.findUnique({ where: { id } });
+  if (!player) {
+    return res.status(404).json({ error: { code: "PLAYER_NOT_FOUND", message: "Pemain tidak ditemukan" } });
+  }
+  // Buka blokir DAN reset hitungan tidak-konfirmasi, supaya dia mulai bersih lagi
+  await prisma.player.update({ where: { id }, data: { isBanned: false, noResponseCount: 0 } });
+  res.json({ message: `Blokir ${player.name} sudah dibuka, hitungan tidak konfirmasi direset ke 0` });
+});
+
 module.exports = router;

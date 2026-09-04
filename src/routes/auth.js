@@ -77,6 +77,12 @@ router.post("/login", async (req, res) => {
     });
   }
 
+  if (player.isBanned) {
+    return res.status(403).json({
+      error: { code: "ACCOUNT_BANNED", message: `Akun Anda diblokir karena terlalu sering tidak konfirmasi hasil match (${player.noResponseCount}x). Hubungi admin komunitas untuk membuka blokir.` },
+    });
+  }
+
   if (!player.emailVerified) {
     return res.status(403).json({
       error: { code: "EMAIL_NOT_VERIFIED", message: "Email belum diverifikasi. Cek inbox/spam Anda, atau minta kirim ulang." },
