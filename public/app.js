@@ -633,7 +633,7 @@ async function renderRules(container) {
       <p style="font-size:16px;line-height:1.7">
         Agar hasil pertandingan tercatat di sistem, pastikan kamu dan lawan sudah terdaftar.<br/>
         Sepakati dulu dengan lawan apakah hasilnya akan dicatat atau tidak di aplikasi.<br/>
-        Setelah tanding, input hasilnya di sistem, Point akan di terpdate setelah konfirmasi (Ingatkan lawan untuk konfirmasi di Aplikasi).
+        Setelah tanding, input hasilnya di sistem, Point akan ter-update otomatis setelah konfirmasi (Ingatkan lawan untuk konfirmasi di Aplikasi).
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
@@ -654,12 +654,14 @@ async function renderRules(container) {
         Semua mulai dari rating 1500. Naik-turun tergantung: seberapa kuat lawan (menang lawan lebih kuat = poin lebih besar),
         seberapa telak kemenangan (6-0 lebih besar poinnya dari 6-5), dan status provisional (10 match pertama tiap orang,
         rating bergerak lebih cepat; setelah itu lebih stabil).<br/><br/>
-        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.
+        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.<br/><br/>
+        Untuk menjaga keseimbangan kompetisi dan mempertahankan gap antar pemain, poin akan di-reset pada setiap awal season baru (akhir tahun). <br/>
+        Namun, seluruh data dan riwayat poin dari season sebelumnya tetap tersimpan dan dapat dilihat kembali dengan memilih season yang diinginkan..
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">4. Konfirmasi Hasil Match</h3>
       <p style="font-size:16px;line-height:1.7">
-        <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak) sebelum rating berubah.<br/>
+        <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak).<br/>
         <strong>Ganda:</strong> cukup 1 wakil dari tiap tim yang konfirmasi (total 2 orang, bebas siapa saja).<br/><br/>
         Kalau ditolak salah satu pihak, match otomatis dibatalkan (tidak mempengaruhi rating). Submit ulang kalau perlu dicatat lagi.<br/><br/>
         Kalau tidak direspon sama sekali dalam <strong>7 hari</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
@@ -668,8 +670,8 @@ async function renderRules(container) {
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
-        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil Anda
-        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis terblokir dan hanya bisa dibuka kembali oleh admin.
+        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil anda
+        dan di tabel ranking. Kalau sudah 5x, akun otomatis terblokir dan hanya bisa dibuka kembali oleh admin.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
