@@ -20,6 +20,53 @@ const upload = multer({
   },
 });
 
+// GET /api/recent-matches - 10 pertandingan terbaru (single + ganda dicampur), publik tanpa login.
+// Buat tampilan "live score" di halaman Ranking.
+router.get("/recent-matches", async (req, res) => {
+  const [singles, doubles] = await Promise.all([
+    prisma.match.findMany({
+      where: { status: "confirmed" },
+      orderBy: { confirmedAt: "desc" },
+      take: 15,
+      include: { winner: true, loser: true },
+    }),
+    prisma.doublesMatch.findMany({
+      where: { status: "confirmed" },
+      orderBy: { confirmedAt: "desc" },
+      take: 15,
+      include: { team1Player1: true, team1Player2: true, team2Player1: true, team2Player2: true },
+    }),
+  ]);
+
+  const singleItems = singles.map((m) => ({
+    type: "single",
+    confirmedAt: m.confirmedAt,
+    winnerText: m.winner.name,
+    loserText: m.loser.name,
+    score: `${m.targetGames}-${m.loserGames}`,
+  }));
+
+  const doubleItems = doubles.map((m) => {
+    const team1 = `${m.team1Player1.name}/${m.team1Player2.name}`;
+    const team2 = `${m.team2Player1.name}/${m.team2Player2.name}`;
+    const winnerText = m.winningTeam === 1 ? team1 : team2;
+    const loserText = m.winningTeam === 1 ? team2 : team1;
+    return {
+      type: "double",
+      confirmedAt: m.confirmedAt,
+      winnerText,
+      loserText,
+      score: `6-${m.loserGames}`,
+    };
+  });
+
+  const merged = [...singleItems, ...doubleItems]
+    .sort((a, b) => new Date(b.confirmedAt) - new Date(a.confirmedAt))
+    .slice(0, 15);
+
+  res.json({ matches: merged });
+});
+
 // GET /api/leaderboard - min 3 match. sortBy: rating (default), matches, winrate
 router.get("/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
