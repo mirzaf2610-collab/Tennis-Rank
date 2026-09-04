@@ -2,6 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { calculateElo, getKFactor, PROVISIONAL_THRESHOLD, isValidTargetGames, DEFAULT_TARGET_GAMES, MIN_TARGET_GAMES, MAX_TARGET_GAMES } = require("../elo");
+const { sendPushToPlayer } = require("../pushService");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -65,6 +66,14 @@ router.post("/matches", requireAuth, async (req, res) => {
       status: "pending",
     },
   });
+
+  const submitterName = isWinnerSubmitting ? winner.name : loser.name;
+  const targetPlayerId = isWinnerSubmitting ? loserId : winnerId;
+  sendPushToPlayer(targetPlayerId, {
+    title: "Konfirmasi Hasil Match",
+    body: `${submitterName} melaporkan hasil match single melawan Anda. Yuk konfirmasi!`,
+    url: "/?page=confirm",
+  }).catch((err) => console.error("Push notification gagal:", err.message));
 
   res.status(201).json({
     matchId: match.id,

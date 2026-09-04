@@ -3,6 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD } = require("../elo");
 const { computeDoublesStats, buildBadges } = require("../achievements");
+const { sendPushToPlayer } = require("../pushService");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -91,6 +92,16 @@ router.post("/doubles/matches", requireAuth, async (req, res) => {
       status: "pending",
     },
   });
+
+  const submitterName = players.find((p) => p.id === team1Player1Id).name;
+  const otherPlayerIds = [team1Player2Id, team2Player1Id, team2Player2Id];
+  for (const pid of otherPlayerIds) {
+    sendPushToPlayer(pid, {
+      title: "Konfirmasi Hasil Match Ganda",
+      body: `${submitterName} melaporkan hasil match ganda. Yuk konfirmasi!`,
+      url: "/?page=confirm",
+    }).catch((err) => console.error("Push notification gagal:", err.message));
+  }
 
   res.status(201).json({
     matchId: match.id,
