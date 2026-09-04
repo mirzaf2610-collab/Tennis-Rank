@@ -34,9 +34,13 @@ function buildBadges({ winRate, matchesPlayed, streak, giantSlayer }) {
 }
 
 // --- SINGLE ---
-async function computeSinglesStats(prisma, playerId) {
+// sinceDate opsional: kalau diisi, cuma hitung match sejak tanggal itu (buat scoping per season)
+async function computeSinglesStats(prisma, playerId, sinceDate = null) {
+  const where = { status: "confirmed", OR: [{ winnerId: playerId }, { loserId: playerId }] };
+  if (sinceDate) where.confirmedAt = { gte: sinceDate };
+
   const matches = await prisma.match.findMany({
-    where: { status: "confirmed", OR: [{ winnerId: playerId }, { loserId: playerId }] },
+    where,
     orderBy: { confirmedAt: "asc" },
     select: { winnerId: true, loserId: true, ratingWinnerBefore: true, ratingLoserBefore: true },
   });
@@ -72,15 +76,18 @@ async function computeSinglesStats(prisma, playerId) {
 }
 
 // --- GANDA ---
-async function computeDoublesStats(prisma, playerId) {
+async function computeDoublesStats(prisma, playerId, sinceDate = null) {
+  const where = {
+    status: "confirmed",
+    OR: [
+      { team1Player1Id: playerId }, { team1Player2Id: playerId },
+      { team2Player1Id: playerId }, { team2Player2Id: playerId },
+    ],
+  };
+  if (sinceDate) where.confirmedAt = { gte: sinceDate };
+
   const matches = await prisma.doublesMatch.findMany({
-    where: {
-      status: "confirmed",
-      OR: [
-        { team1Player1Id: playerId }, { team1Player2Id: playerId },
-        { team2Player1Id: playerId }, { team2Player2Id: playerId },
-      ],
-    },
+    where,
     orderBy: { confirmedAt: "asc" },
     select: {
       team1Player1Id: true, team1Player2Id: true, team2Player1Id: true, team2Player2Id: true,
