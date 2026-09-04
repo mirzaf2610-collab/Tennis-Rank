@@ -33,6 +33,8 @@ model Player {
   emailVerified  Boolean  @default(false) @map("email_verified")
   isApproved     Boolean  @default(false) @map("is_approved")
   isAdmin        Boolean  @default(false) @map("is_admin")
+  isBanned       Boolean  @default(false) @map("is_banned")
+  noResponseCount Int     @default(0) @map("no_response_count")
   createdAt      DateTime @default(now()) @map("created_at")
 
   matchesWon      Match[]        @relation("WinnerMatches")
