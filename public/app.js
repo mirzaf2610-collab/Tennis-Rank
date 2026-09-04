@@ -223,34 +223,48 @@ async function renderLeaderboard(container) {
   const wrap = el(`
     <div class="card">
       <h2>Ranking</h2>
-      <div class="nav" style="margin-bottom:1rem">
+      <div class="nav" style="margin-bottom:0.75rem">
         <button data-mode="single" class="active">Single</button>
         <button data-mode="double">Ganda</button>
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="font-size:12px">Urutkan berdasarkan</label>
+        <select id="sort-select">
+          <option value="rating">Poin</option>
+          <option value="matches">Jumlah Main</option>
+          <option value="winrate">Win Rate</option>
+        </select>
       </div>
       <div id="lb-list">Memuat...</div>
     </div>
   `);
   container.appendChild(wrap);
 
-  async function loadBoard(mode) {
+  let currentMode = "single";
+
+  async function loadBoard() {
     const list = wrap.querySelector("#lb-list");
     list.innerHTML = "Memuat...";
+    const sortBy = wrap.querySelector("#sort-select").value;
     try {
-      const endpoint = mode === "double" ? "/doubles/leaderboard" : "/leaderboard";
-      const { leaderboard } = await api(endpoint);
+      const endpoint = currentMode === "double" ? "/doubles/leaderboard" : "/leaderboard";
+      const { leaderboard } = await api(`${endpoint}?sortBy=${sortBy}`);
       if (leaderboard.length === 0) {
         list.innerHTML = `<p class="muted">Belum ada pemain dengan minimal 3 match.</p>`;
       } else {
         list.innerHTML = leaderboard
           .map(
             (p) => `
-          <div class="row">
+          <div class="row" style="align-items:flex-start">
             <span style="display:flex;align-items:center;gap:8px">
               <span class="rank-badge">#${p.rank}</span>
               ${avatarHtml(p.photoUrl, p.name, 28)}
-              ${p.name}
+              <span>
+                <div>${p.name}</div>
+                <div class="muted" style="font-size:11px">${p.matchesPlayed}x main &middot; ${p.wins}M-${p.losses}K &middot; ${p.winRate}% win</div>
+              </span>
             </span>
-            <span>${Math.round(p.currentRating)} <span class="muted">(${p.matchesPlayed}x)</span></span>
+            <span>${Math.round(p.currentRating)}</span>
           </div>`
           )
           .join("");
@@ -264,11 +278,13 @@ async function renderLeaderboard(container) {
     b.addEventListener("click", () => {
       wrap.querySelectorAll("[data-mode]").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
-      loadBoard(b.dataset.mode);
+      currentMode = b.dataset.mode;
+      loadBoard();
     });
   });
+  wrap.querySelector("#sort-select").addEventListener("change", loadBoard);
 
-  loadBoard("single");
+  loadBoard();
 }
 
 async function renderSubmit(container) {
