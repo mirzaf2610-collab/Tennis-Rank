@@ -6,22 +6,62 @@ const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEAD
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// GET /api/doubles/leaderboard
+// GET /api/doubles/leaderboard - sortBy: rating (default), matches, winrate
 router.get("/doubles/leaderboard", async (req, res) => {
+  const sortBy = req.query.sortBy || "rating";
+
   const players = await prisma.player.findMany({
     where: { isActive: true, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
-    orderBy: { doublesRating: "desc" },
     select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true },
   });
-  const leaderboard = players.map((p, i) => ({
-    rank: i + 1,
-    id: p.id,
-    photoUrl: p.photoUrl,
-    name: p.name,
-    currentRating: p.doublesRating,
-    matchesPlayed: p.doublesMatchesPlayed,
-    isProvisional: p.doublesIsProvisional,
-  }));
+
+  const playerIds = players.map((p) => p.id);
+  const matches = await prisma.doublesMatch.findMany({
+    where: {
+      status: "confirmed",
+      OR: [
+        { team1Player1Id: { in: playerIds } }, { team1Player2Id: { in: playerIds } },
+        { team2Player1Id: { in: playerIds } }, { team2Player2Id: { in: playerIds } },
+      ],
+    },
+    select: { team1Player1Id: true, team1Player2Id: true, team2Player1Id: true, team2Player2Id: true, winningTeam: true },
+  });
+
+  const winsById = {};
+  for (const m of matches) {
+    const team1Ids = [m.team1Player1Id, m.team1Player2Id];
+    const team2Ids = [m.team2Player1Id, m.team2Player2Id];
+    const winnerIds = m.winningTeam === 1 ? team1Ids : team2Ids;
+    for (const id of winnerIds) {
+      if (playerIds.includes(id)) winsById[id] = (winsById[id] || 0) + 1;
+    }
+  }
+
+  let leaderboard = players.map((p) => {
+    const wins = winsById[p.id] || 0;
+    const winRate = p.doublesMatchesPlayed > 0 ? Math.round((wins / p.doublesMatchesPlayed) * 1000) / 10 : 0;
+    return {
+      id: p.id,
+      photoUrl: p.photoUrl,
+      name: p.name,
+      currentRating: p.doublesRating,
+      matchesPlayed: p.doublesMatchesPlayed,
+      isProvisional: p.doublesIsProvisional,
+      wins,
+      losses: p.doublesMatchesPlayed - wins,
+      winRate,
+    };
+  });
+
+  if (sortBy === "matches") {
+    leaderboard.sort((a, b) => b.matchesPlayed - a.matchesPlayed);
+  } else if (sortBy === "winrate") {
+    leaderboard.sort((a, b) => b.winRate - a.winRate || b.matchesPlayed - a.matchesPlayed);
+  } else {
+    leaderboard.sort((a, b) => Number(b.currentRating) - Number(a.currentRating));
+  }
+
+  leaderboard = leaderboard.map((p, i) => ({ rank: i + 1, ...p }));
   res.json({ leaderboard });
 });
 

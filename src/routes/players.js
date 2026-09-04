@@ -19,15 +19,38 @@ const upload = multer({
   },
 });
 
-// GET /api/leaderboard - min 3 match, urut rating tertinggi
+// GET /api/leaderboard - min 3 match. sortBy: rating (default), matches, winrate
 router.get("/leaderboard", async (req, res) => {
+  const sortBy = req.query.sortBy || "rating";
+
   const players = await prisma.player.findMany({
     where: { isActive: true, isApproved: true, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
-    orderBy: { currentRating: "desc" },
     select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true },
   });
 
-  const leaderboard = players.map((p, i) => ({ rank: i + 1, ...p }));
+  const playerIds = players.map((p) => p.id);
+  const winCounts = await prisma.match.groupBy({
+    by: ["winnerId"],
+    where: { status: "confirmed", winnerId: { in: playerIds } },
+    _count: { winnerId: true },
+  });
+  const winsById = Object.fromEntries(winCounts.map((w) => [w.winnerId, w._count.winnerId]));
+
+  let leaderboard = players.map((p) => {
+    const wins = winsById[p.id] || 0;
+    const winRate = p.matchesPlayed > 0 ? Math.round((wins / p.matchesPlayed) * 1000) / 10 : 0;
+    return { ...p, wins, losses: p.matchesPlayed - wins, winRate };
+  });
+
+  if (sortBy === "matches") {
+    leaderboard.sort((a, b) => b.matchesPlayed - a.matchesPlayed);
+  } else if (sortBy === "winrate") {
+    leaderboard.sort((a, b) => b.winRate - a.winRate || b.matchesPlayed - a.matchesPlayed);
+  } else {
+    leaderboard.sort((a, b) => Number(b.currentRating) - Number(a.currentRating));
+  }
+
+  leaderboard = leaderboard.map((p, i) => ({ rank: i + 1, ...p }));
   res.json({ leaderboard });
 });
 
