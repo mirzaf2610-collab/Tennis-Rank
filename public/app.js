@@ -68,6 +68,20 @@ function badgesToHtml(badges) {
   return badges.map((b) => `${b.emoji} ${b.label}`).join("<br/>");
 }
 
+// Bangun mapping nama->id untuk kotak input pemain yang bisa diketik (pakai <datalist>).
+// Kalau ada nama kembar, kasih tanda pembeda di belakang nama (misal "Budi (2)").
+function buildPlayerNameMap(players) {
+  const nameCount = {};
+  players.forEach((p) => { nameCount[p.name] = (nameCount[p.name] || 0) + 1; });
+  const nameToId = {};
+  const options = players.map((p) => {
+    const displayName = nameCount[p.name] > 1 ? `${p.name} (${p.id})` : p.name;
+    nameToId[displayName] = p.id;
+    return displayName;
+  });
+  return { nameToId, options };
+}
+
 function nav(active) {
   const items = [["leaderboard", "Ranking"]];
   if (state.token) {
@@ -325,7 +339,8 @@ async function renderSubmit(container) {
     <div class="card">
       <h2>Input hasil match</h2>
       <label>Lawan</label>
-      <select id="opponent"></select>
+      <input list="opponent-options" id="opponent-input" placeholder="Ketik nama lawan..." autocomplete="off" />
+      <datalist id="opponent-options"></datalist>
       <label>Format (main sampai berapa game)</label>
       <select id="target-games">
         <option value="4">First to 4</option>
@@ -355,25 +370,32 @@ async function renderSubmit(container) {
   wrap.querySelector("#target-games").addEventListener("change", refreshLoserGamesOptions);
   refreshLoserGamesOptions();
 
+  let opponentNameToId = {};
   try {
     const { players } = await api("/players");
-    const select = wrap.querySelector("#opponent");
-    select.innerHTML = players
-      .filter((p) => p.id !== state.player.id)
-      .map((p) => `<option value="${p.id}">${p.name}</option>`)
-      .join("");
+    const others = players.filter((p) => p.id !== state.player.id);
+    const { nameToId, options } = buildPlayerNameMap(others);
+    opponentNameToId = nameToId;
+    wrap.querySelector("#opponent-options").innerHTML = options.map((name) => `<option value="${name}">`).join("");
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
   }
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
-    const opponentId = Number(wrap.querySelector("#opponent").value);
+    const opponentName = wrap.querySelector("#opponent-input").value.trim();
+    const opponentId = opponentNameToId[opponentName];
     const targetGames = Number(wrap.querySelector("#target-games").value);
     const iWon = wrap.querySelector("#who-won").value === "me";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
+
+    if (!opponentId) {
+      errorEl.textContent = "Pilih nama lawan dari daftar saran yang muncul saat mengetik";
+      errorEl.style.display = "block";
+      return;
+    }
 
     const winnerId = iWon ? state.player.id : opponentId;
     const loserId = iWon ? opponentId : state.player.id;
@@ -400,11 +422,12 @@ async function renderSubmitDoubles(container) {
       <h2>Input hasil ganda</h2>
       <p class="muted">Anda otomatis jadi pemain 1 di Tim Anda.</p>
       <label>Partner Anda (Tim Anda)</label>
-      <select id="partner"></select>
+      <input list="doubles-player-options" id="partner-input" placeholder="Ketik nama partner..." autocomplete="off" />
       <label>Lawan 1</label>
-      <select id="opp1"></select>
+      <input list="doubles-player-options" id="opp1-input" placeholder="Ketik nama lawan 1..." autocomplete="off" />
       <label>Lawan 2</label>
-      <select id="opp2"></select>
+      <input list="doubles-player-options" id="opp2-input" placeholder="Ketik nama lawan 2..." autocomplete="off" />
+      <datalist id="doubles-player-options"></datalist>
       <label>Tim mana yang menang?</label>
       <select id="who-won">
         <option value="team1">Tim saya menang</option>
@@ -420,26 +443,35 @@ async function renderSubmitDoubles(container) {
   `);
   container.appendChild(wrap);
 
+  let doublesNameToId = {};
   try {
     const { players } = await api("/players");
     const others = players.filter((p) => p.id !== state.player.id);
-    const options = others.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
-    wrap.querySelector("#partner").innerHTML = options;
-    wrap.querySelector("#opp1").innerHTML = options;
-    wrap.querySelector("#opp2").innerHTML = options;
+    const { nameToId, options } = buildPlayerNameMap(others);
+    doublesNameToId = nameToId;
+    wrap.querySelector("#doubles-player-options").innerHTML = options.map((name) => `<option value="${name}">`).join("");
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
   }
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
-    const team1Player2Id = Number(wrap.querySelector("#partner").value);
-    const team2Player1Id = Number(wrap.querySelector("#opp1").value);
-    const team2Player2Id = Number(wrap.querySelector("#opp2").value);
+    const partnerName = wrap.querySelector("#partner-input").value.trim();
+    const opp1Name = wrap.querySelector("#opp1-input").value.trim();
+    const opp2Name = wrap.querySelector("#opp2-input").value.trim();
+    const team1Player2Id = doublesNameToId[partnerName];
+    const team2Player1Id = doublesNameToId[opp1Name];
+    const team2Player2Id = doublesNameToId[opp2Name];
     const iWon = wrap.querySelector("#who-won").value === "team1";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
+
+    if (!team1Player2Id || !team2Player1Id || !team2Player2Id) {
+      errorEl.textContent = "Pilih nama partner dan kedua lawan dari daftar saran yang muncul saat mengetik";
+      errorEl.style.display = "block";
+      return;
+    }
 
     const ids = [team1Player2Id, team2Player1Id, team2Player2Id];
     if (new Set(ids).size !== 3) {
