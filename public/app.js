@@ -102,7 +102,7 @@ async function renderLogin(container) {
         <input id="f-name" type="text" placeholder="Nama lengkap" />
       </div>
       <label>Email</label>
-      <input id="f-email" type="email" placeholder="nama@pusri.co.id" />
+      <input id="f-email" type="email" placeholder="Isi email anda" />
       <label>Password</label>
       <input id="f-password" type="password" placeholder="Minimal 6 karakter" />
       <div id="f-error" class="error" style="display:none"></div>
@@ -869,7 +869,7 @@ async function render() {
 
   app.appendChild(el(`
     <div style="text-align:center;margin-top:1.5rem;padding-bottom:1rem">
-      <a href="#" id="rules-link" style="font-size:12px;color:#777;text-decoration:underline">Aturan Main</a>
+      <a href="#" id="rules-link" style="font-size:16px;color:#1a1a1a;text-decoration:underline;font-weight:600;background:#fff3cd;padding:8px 16px;border-radius:8px;display:inline-block">Aturan Main</a>
     </div>
   `));
   app.querySelector("#rules-link").addEventListener("click", (e) => {
