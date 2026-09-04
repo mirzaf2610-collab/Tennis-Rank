@@ -68,6 +68,18 @@ function badgesToHtml(badges) {
   return badges.map((b) => `${b.emoji} ${b.label}`).join("<br/>");
 }
 
+// Format waktu relatif sederhana ("baru saja", "5 menit lalu", "2 jam lalu", "3 hari lalu")
+function timeAgo(dateStr) {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "baru saja";
+  if (minutes < 60) return `${minutes} menit lalu`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} jam lalu`;
+  const days = Math.floor(hours / 24);
+  return `${days} hari lalu`;
+}
+
 // Bangun mapping nama->id untuk kotak input pemain yang bisa diketik (pakai <datalist>).
 // Kalau ada nama kembar, kasih tanda pembeda di belakang nama (misal "Budi (2)").
 function buildPlayerNameMap(players) {
@@ -296,6 +308,10 @@ async function renderLeaderboard(container) {
         <button data-mode="double">Ganda</button>
       </div>
       <div style="margin-bottom:1rem">
+        <label style="font-size:12px">Season</label>
+        <select id="season-select"><option>Memuat...</option></select>
+      </div>
+      <div style="margin-bottom:1rem">
         <label style="font-size:12px">Urutkan berdasarkan</label>
         <select id="sort-select">
           <option value="rating">Poin</option>
@@ -308,15 +324,66 @@ async function renderLeaderboard(container) {
   `);
   container.appendChild(wrap);
 
+  // Isi dropdown Season
+  let seasons = [];
+  try {
+    const data = await api("/seasons");
+    seasons = data.seasons;
+    wrap.querySelector("#season-select").innerHTML = seasons
+      .map((s) => `<option value="${s.id}">${s.name}${s.isActive ? " (Aktif)" : ""}</option>`)
+      .join("");
+  } catch (err) {
+    wrap.querySelector("#season-select").innerHTML = `<option>Gagal memuat season</option>`;
+  }
+
+  const liveWrap = el(`<div class="card"><h2>🎾 Live Score</h2><div id="live-score-list">Memuat...</div></div>`);
+  container.appendChild(liveWrap);
+  try {
+    const { matches } = await api("/recent-matches");
+    const list = liveWrap.querySelector("#live-score-list");
+    if (matches.length === 0) {
+      list.innerHTML = `<p class="muted">Belum ada pertandingan yang tercatat.</p>`;
+    } else {
+      list.innerHTML = matches
+        .map((m) => {
+          const badge = m.type === "double"
+            ? `<span style="font-size:10px;background:#e3f2fd;color:#1565c0;padding:2px 6px;border-radius:6px;font-weight:600">GANDA</span>`
+            : `<span style="font-size:10px;background:#fff3cd;color:#8a6d00;padding:2px 6px;border-radius:6px;font-weight:600">SINGLE</span>`;
+          return `
+            <div class="row" style="align-items:flex-start;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+                ${badge} <span class="muted" style="font-size:11px">${timeAgo(m.confirmedAt)}</span>
+              </div>
+              <div style="font-size:14px"><strong>${m.winnerText}</strong> menang vs ${m.loserText} <span class="muted">(${m.score})</span></div>
+            </div>`;
+        })
+        .join("");
+    }
+  } catch (err) {
+    liveWrap.querySelector("#live-score-list").innerHTML = `<p class="error">${err.message}</p>`;
+  }
+
   let currentMode = "single";
 
   async function loadBoard() {
     const list = wrap.querySelector("#lb-list");
     list.innerHTML = "Memuat...";
     const sortBy = wrap.querySelector("#sort-select").value;
+    const seasonSelect = wrap.querySelector("#season-select");
+    const seasonId = seasonSelect.value;
+    const selectedSeason = seasons.find((s) => String(s.id) === String(seasonId));
     try {
-      const endpoint = currentMode === "double" ? "/doubles/leaderboard" : "/leaderboard";
-      const { leaderboard } = await api(`${endpoint}?sortBy=${sortBy}`);
+      let leaderboard;
+      if (selectedSeason && !selectedSeason.isActive) {
+        // Season lama -> pakai endpoint arsip
+        const type = currentMode === "double" ? "doubles" : "singles";
+        const data = await api(`/seasons/${seasonId}/leaderboard?type=${type}&sortBy=${sortBy}`);
+        leaderboard = data.leaderboard;
+      } else {
+        const endpoint = currentMode === "double" ? "/doubles/leaderboard" : "/leaderboard";
+        const data = await api(`${endpoint}?sortBy=${sortBy}`);
+        leaderboard = data.leaderboard;
+      }
       if (leaderboard.length === 0) {
         list.innerHTML = `<p class="muted">Belum ada pemain dengan minimal 3 match.</p>`;
       } else {
@@ -366,6 +433,7 @@ async function renderLeaderboard(container) {
     });
   });
   wrap.querySelector("#sort-select").addEventListener("change", loadBoard);
+  wrap.querySelector("#season-select").addEventListener("change", loadBoard);
 
   loadBoard();
 }
@@ -641,6 +709,42 @@ async function renderConfirm(container) {
 
 async function renderAdmin(container) {
   container.appendChild(nav("admin"));
+
+  const seasonWrap = el(`
+    <div class="card">
+      <h2>Kelola Season</h2>
+      <p id="current-season-info" class="muted" style="font-size:13px">Memuat...</p>
+      <label>Nama season baru (opsional, kosongkan untuk default)</label>
+      <input id="new-season-name" type="text" placeholder="misal: Season 2027" />
+      <div id="season-error" class="error" style="display:none"></div>
+      <button id="end-season-btn" class="btn danger">Akhiri Season & Mulai Season Baru</button>
+    </div>
+  `);
+  container.appendChild(seasonWrap);
+  try {
+    const { seasons } = await api("/seasons");
+    const active = seasons.find((s) => s.isActive);
+    seasonWrap.querySelector("#current-season-info").textContent = active
+      ? `Season aktif sekarang: "${active.name}" (mulai ${new Date(active.startedAt).toLocaleDateString("id-ID")})`
+      : "Belum ada season aktif";
+  } catch (err) {
+    seasonWrap.querySelector("#current-season-info").textContent = "Gagal memuat info season";
+  }
+  seasonWrap.querySelector("#end-season-btn").addEventListener("click", async () => {
+    if (!confirm("Yakin akhiri season sekarang? Semua rating akan direset ke 1500 dan season ini diarsipkan permanen. Tindakan ini TIDAK BISA dibatalkan.")) return;
+    const newSeasonName = seasonWrap.querySelector("#new-season-name").value.trim();
+    const errorEl = seasonWrap.querySelector("#season-error");
+    errorEl.style.display = "none";
+    try {
+      const data = await api("/admin/end-season", { method: "POST", body: JSON.stringify({ newSeasonName: newSeasonName || undefined }) });
+      alert(data.message);
+      render();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+  });
+
   const wrap = el(`<div class="card"><h2>Persetujuan Pendaftar Baru</h2><div id="pending-players-list">Memuat...</div></div>`);
   container.appendChild(wrap);
 
@@ -723,6 +827,18 @@ async function renderRules(container) {
     <div class="card">
       <h2>Aturan Main</h2>
 
+      <div style="background:#fff3cd;border-radius:10px;padding:1rem;margin-top:1rem">
+        <p style="font-size:17px;font-weight:700;margin:0 0 0.5rem 0">Main → Catat → Konfirmasi → Poin Bertambah!</p>
+        <p style="font-size:15px;line-height:1.7;margin:0">
+          • Pastikan kamu dan lawan sudah terdaftar di Tennis-Rank.<br/>
+          • Sebelum bermain, sepakati apakah pertandingan akan dicatat di aplikasi.<br/>
+          • Setelah pertandingan: Input hasil → Lawan konfirmasi → Poin ter-update otomatis.
+        </p>
+        <p style="font-size:15px;line-height:1.7;margin:0.75rem 0 0 0">
+          🔔 Jangan lupa ingatkan lawan untuk konfirmasi hasil pertandingan di aplikasi!
+        </p>
+      </div>
+
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
       <p style="font-size:16px;line-height:1.7">
         Daftar akun → verifikasi email → tunggu persetujuan admin komunitas. Baru setelah disetujui, akun bisa dipakai Login.
@@ -740,7 +856,10 @@ async function renderRules(container) {
         Semua mulai dari rating 1500. Naik-turun tergantung: seberapa kuat lawan (menang lawan lebih kuat = poin lebih besar),
         seberapa telak kemenangan (6-0 lebih besar poinnya dari 6-5), dan status provisional (10 match pertama tiap orang,
         rating bergerak lebih cepat; setelah itu lebih stabil).<br/><br/>
-        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.
+        Untuk Ganda, poin dihitung dari rata-rata rating tim, tapi tiap pemain tetap punya rating individu sendiri.<br/><br/>
+        Untuk menjaga keseimbangan kompetisi dan mempertahankan gap antar pemain, poin akan di-reset pada setiap awal season baru
+        (akhir tahun). Namun, seluruh data dan riwayat poin dari season sebelumnya tetap tersimpan dan dapat dilihat kembali
+        dengan memilih season yang diinginkan lewat dropdown "Season" di halaman Ranking.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">4. Konfirmasi Hasil Match</h3>
@@ -793,7 +912,7 @@ async function renderRules(container) {
 
       <p class="muted" style="font-size:14px;margin-top:1rem;border-top:1px solid #eee;padding-top:1rem;line-height:1.6">
         Aplikasi ini khusus internal PSP Tennis Club. Kalau ingin dibuatkan untuk komunitas lain,
-        silakan kontak admin (MF) via email PSPClub2026@gmail.com.
+        silakan kontak admin via email PSPClub2026@gmail.com (MF).
       </p>
     </div>
   `);
