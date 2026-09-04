@@ -51,6 +51,7 @@ model Player {
   passwordResetTokens PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   pushSubscriptions PushSubscription[]
+  seasonRecords SeasonRecord[]
 
   @@map("players")
 }
@@ -204,4 +205,46 @@ model PushSubscription {
   player Player @relation(fields: [playerId], references: [id])
 
   @@map("push_subscriptions")
+}
+
+model Season {
+  id        Int       @id @default(autoincrement())
+  name      String
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  records SeasonRecord[]
+
+  @@map("seasons")
+}
+
+// Snapshot arsip rating & statistik tiap pemain saat 1 season berakhir.
+// Data ini permanen, tidak berubah lagi setelah dicatat -- beda dengan rating
+// "aktif" di tabel players yang terus berubah tiap ada match baru.
+model SeasonRecord {
+  id     Int @id @default(autoincrement())
+  seasonId Int @map("season_id")
+  playerId Int @map("player_id")
+
+  playerName String @map("player_name") // disimpan juga di sini, jaga-jaga kalau nama pemain berubah nanti
+
+  singlesRating        Decimal @map("singles_rating") @db.Decimal(7, 2)
+  singlesMatchesPlayed Int     @map("singles_matches_played")
+  singlesWins          Int     @map("singles_wins")
+  singlesLosses        Int     @map("singles_losses")
+
+  doublesRating        Decimal @map("doubles_rating") @db.Decimal(7, 2)
+  doublesMatchesPlayed Int     @map("doubles_matches_played")
+  doublesWins          Int     @map("doubles_wins")
+  doublesLosses        Int     @map("doubles_losses")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  season Season @relation(fields: [seasonId], references: [id])
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@unique([seasonId, playerId])
+  @@map("season_records")
 }
