@@ -88,8 +88,8 @@ async function renderLogin(container) {
         <button data-mode="register">Daftar</button>
       </div>
       <div id="name-field" style="display:none">
-        <label>Nama</label>
-        <input id="f-name" type="text" placeholder="Nama lengkap" />
+        <label>Nama Lengkap</label>
+        <input id="f-name" type="text" placeholder="Isi Nama lengkap (akan tampil di tabel rank)" />
       </div>
       <label>Email</label>
       <input id="f-email" type="email" placeholder="nama@pusri.co.id" />
@@ -631,9 +631,12 @@ async function renderRules(container) {
       <h2>Aturan Main</h2>
 
       <p style="font-size:16px;line-height:1.7">
-        Agar hasil pertandingan tercatat di sistem, pastikan kamu dan lawan sudah terdaftar.<br/>
-        Sepakati dulu dengan lawan apakah hasilnya akan dicatat atau tidak di aplikasi.<br/>
-        Setelah tanding, input hasilnya di sistem, Point akan ter-update otomatis setelah konfirmasi (Ingatkan lawan untuk konfirmasi di Aplikasi).
+      Main → Catat → Konfirmasi → Poin Bertambah!<br/>
+      Pastikan kamu dan lawan sudah terdaftar di Tennis-Rank.<br/>
+      Sebelum bermain, sepakati apakah pertandingan akan dicatat di aplikasi atau tidak.<br/><br/>
+      Setelah pertandingan:<br/>
+      Input hasil → Lawan konfirmasi → Poin ter-update otomatis.<br/>
+      🔔 Jangan lupa ingatkan lawan untuk konfirmasi hasil pertandingan di aplikasi!
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">1. Cara Daftar</h3>
