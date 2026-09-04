@@ -42,8 +42,17 @@ router.post("/admin/reject/:id", requireAuth, requireAdmin, async (req, res) => 
   if (!player) {
     return res.status(404).json({ error: { code: "PLAYER_NOT_FOUND", message: "Pemain tidak ditemukan" } });
   }
-  await prisma.player.delete({ where: { id } });
-  res.json({ message: `Pendaftaran ${player.name} ditolak dan dihapus` });
+  try {
+    await prisma.$transaction([
+      // Bersihkan dulu data terkait (token verifikasi/reset) supaya tidak kena foreign key constraint
+      prisma.emailVerificationToken.deleteMany({ where: { playerId: id } }),
+      prisma.passwordResetToken.deleteMany({ where: { playerId: id } }),
+      prisma.player.delete({ where: { id } }),
+    ]);
+    res.json({ message: `Pendaftaran ${player.name} ditolak dan dihapus` });
+  } catch (e) {
+    res.status(500).json({ error: { code: "DELETE_FAILED", message: `Gagal menghapus akun: ${e.message}` } });
+  }
 });
 
 // GET /api/admin/banned-players - daftar akun yang sedang diblokir
