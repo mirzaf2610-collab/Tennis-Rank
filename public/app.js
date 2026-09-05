@@ -454,10 +454,7 @@ async function renderSubmit(container) {
     <div class="card">
       <h2>Input hasil match</h2>
       <label>Lawan</label>
-      <div class="autocomplete-wrapper">
-        <input id="opponent-input" placeholder="Ketik nama lawan..." autocomplete="off" />
-        <div class="autocomplete-list"></div>
-      </div>
+      <select id="opponent"></select>
       <label>Format (main sampai berapa game)</label>
       <select id="target-games">
         <option value="4">First to 4</option>
@@ -487,32 +484,25 @@ async function renderSubmit(container) {
   wrap.querySelector("#target-games").addEventListener("change", refreshLoserGamesOptions);
   refreshLoserGamesOptions();
 
-  let opponentNameToId = {};
   try {
     const { players } = await api("/players");
-    const others = players.filter((p) => p.id !== state.player.id);
-    const { nameToId } = buildPlayerNameMap(others);
-    opponentNameToId = nameToId;
-    setupPlayerAutocomplete(wrap.querySelector(".autocomplete-wrapper"), nameToId);
+    const select = wrap.querySelector("#opponent");
+    select.innerHTML = players
+      .filter((p) => p.id !== state.player.id)
+      .map((p) => `<option value="${p.id}">${p.name}</option>`)
+      .join("");
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
   }
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
-    const opponentName = wrap.querySelector("#opponent-input").value.trim();
-    const opponentId = resolvePlayerId(opponentNameToId, opponentName);
+    const opponentId = Number(wrap.querySelector("#opponent").value);
     const targetGames = Number(wrap.querySelector("#target-games").value);
     const iWon = wrap.querySelector("#who-won").value === "me";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
-
-    if (!opponentId) {
-      errorEl.textContent = "Pilih nama lawan dari daftar saran yang muncul saat mengetik";
-      errorEl.style.display = "block";
-      return;
-    }
 
     const winnerId = iWon ? state.player.id : opponentId;
     const loserId = iWon ? opponentId : state.player.id;
@@ -539,20 +529,11 @@ async function renderSubmitDoubles(container) {
       <h2>Input hasil ganda</h2>
       <p class="muted">Anda otomatis jadi pemain 1 di Tim Anda.</p>
       <label>Partner Anda (Tim Anda)</label>
-      <div class="autocomplete-wrapper" id="partner-wrapper">
-        <input id="partner-input" placeholder="Ketik nama partner..." autocomplete="off" />
-        <div class="autocomplete-list"></div>
-      </div>
+      <select id="partner"></select>
       <label>Lawan 1</label>
-      <div class="autocomplete-wrapper" id="opp1-wrapper">
-        <input id="opp1-input" placeholder="Ketik nama lawan 1..." autocomplete="off" />
-        <div class="autocomplete-list"></div>
-      </div>
+      <select id="opp1"></select>
       <label>Lawan 2</label>
-      <div class="autocomplete-wrapper" id="opp2-wrapper">
-        <input id="opp2-input" placeholder="Ketik nama lawan 2..." autocomplete="off" />
-        <div class="autocomplete-list"></div>
-      </div>
+      <select id="opp2"></select>
       <label>Tim mana yang menang?</label>
       <select id="who-won">
         <option value="team1">Tim saya menang</option>
@@ -568,37 +549,26 @@ async function renderSubmitDoubles(container) {
   `);
   container.appendChild(wrap);
 
-  let doublesNameToId = {};
   try {
     const { players } = await api("/players");
     const others = players.filter((p) => p.id !== state.player.id);
-    const { nameToId } = buildPlayerNameMap(others);
-    doublesNameToId = nameToId;
-    setupPlayerAutocomplete(wrap.querySelector("#partner-wrapper"), nameToId);
-    setupPlayerAutocomplete(wrap.querySelector("#opp1-wrapper"), nameToId);
-    setupPlayerAutocomplete(wrap.querySelector("#opp2-wrapper"), nameToId);
+    const options = others.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+    wrap.querySelector("#partner").innerHTML = options;
+    wrap.querySelector("#opp1").innerHTML = options;
+    wrap.querySelector("#opp2").innerHTML = options;
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
   }
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
-    const partnerName = wrap.querySelector("#partner-input").value.trim();
-    const opp1Name = wrap.querySelector("#opp1-input").value.trim();
-    const opp2Name = wrap.querySelector("#opp2-input").value.trim();
-    const team1Player2Id = resolvePlayerId(doublesNameToId, partnerName);
-    const team2Player1Id = resolvePlayerId(doublesNameToId, opp1Name);
-    const team2Player2Id = resolvePlayerId(doublesNameToId, opp2Name);
+    const team1Player2Id = Number(wrap.querySelector("#partner").value);
+    const team2Player1Id = Number(wrap.querySelector("#opp1").value);
+    const team2Player2Id = Number(wrap.querySelector("#opp2").value);
     const iWon = wrap.querySelector("#who-won").value === "team1";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
-
-    if (!team1Player2Id || !team2Player1Id || !team2Player2Id) {
-      errorEl.textContent = "Pilih nama partner dan kedua lawan dari daftar saran yang muncul saat mengetik";
-      errorEl.style.display = "block";
-      return;
-    }
 
     const ids = [team1Player2Id, team2Player1Id, team2Player2Id];
     if (new Set(ids).size !== 3) {
