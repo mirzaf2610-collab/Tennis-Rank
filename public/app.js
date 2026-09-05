@@ -558,7 +558,7 @@ async function renderSubmitDoubles(container) {
   container.appendChild(wrap);
 
   try {
-    const { players } = await api("/players");
+    const { players } = await api("/players?includeDummy=true");
     const others = players.filter((p) => p.id !== state.player.id);
     const options = others.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
     wrap.querySelector("#partner").innerHTML = `<option value="" selected disabled>-- Pilih partner --</option>${options}`;
