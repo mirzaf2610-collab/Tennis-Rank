@@ -308,5 +308,61 @@ router.get("/doubles/matches/pending-for-me", requireAuth, async (req, res) => {
   res.json({ pending });
 });
 
+// GET /api/doubles/matches?player_id=X - histori 5 match ganda terakhir milik 1 pemain
+router.get("/doubles/matches", async (req, res) => {
+  const playerId = Number(req.query.player_id);
+  if (!playerId) {
+    return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "player_id wajib diisi" } });
+  }
+
+  const matches = await prisma.doublesMatch.findMany({
+    where: {
+      OR: [
+        { team1Player1Id: playerId }, { team1Player2Id: playerId },
+        { team2Player1Id: playerId }, { team2Player2Id: playerId },
+      ],
+    },
+    include: { team1Player1: true, team1Player2: true, team2Player1: true, team2Player2: true },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  });
+
+  const result = matches.map((m) => {
+    const myTeam = [m.team1Player1Id, m.team1Player2Id].includes(playerId) ? 1 : 2;
+    const partner = myTeam === 1
+      ? (m.team1Player1Id === playerId ? m.team1Player2.name : m.team1Player1.name)
+      : (m.team2Player1Id === playerId ? m.team2Player2.name : m.team2Player1.name);
+    const opponents = myTeam === 1
+      ? `${m.team2Player1.name}/${m.team2Player2.name}`
+      : `${m.team1Player1.name}/${m.team1Player2.name}`;
+    const won = m.winningTeam === myTeam;
+
+    let ratingChange = null;
+    if (m.status === "confirmed") {
+      const myAfter = myTeam === 1
+        ? (m.team1Player1Id === playerId ? m.t1p1RatingAfter : m.t1p2RatingAfter)
+        : (m.team2Player1Id === playerId ? m.t2p1RatingAfter : m.t2p2RatingAfter);
+      const myBefore = myTeam === 1
+        ? (m.team1Player1Id === playerId ? m.t1p1RatingBefore : m.t1p2RatingBefore)
+        : (m.team2Player1Id === playerId ? m.t2p1RatingBefore : m.t2p2RatingBefore);
+      if (myAfter != null && myBefore != null) ratingChange = Number(myAfter) - Number(myBefore);
+    }
+
+    return {
+      id: m.id,
+      partner,
+      opponents,
+      won,
+      score: `6-${m.loserGames}`,
+      status: m.status,
+      rejectReason: m.rejectReason,
+      ratingChange,
+      matchDate: m.matchDate,
+    };
+  });
+
+  res.json({ matches: result });
+});
+
 module.exports = router;
 module.exports.applyDoublesEloAndConfirm = applyDoublesEloAndConfirm;
