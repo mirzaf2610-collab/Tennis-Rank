@@ -35,6 +35,7 @@ model Player {
   isAdmin        Boolean  @default(false) @map("is_admin")
   isBanned       Boolean  @default(false) @map("is_banned")
   noResponseCount Int     @default(0) @map("no_response_count")
+  isDummy        Boolean  @default(false) @map("is_dummy")
   createdAt      DateTime @default(now()) @map("created_at")
 
   matchesWon      Match[]        @relation("WinnerMatches")
