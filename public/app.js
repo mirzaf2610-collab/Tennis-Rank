@@ -94,6 +94,16 @@ function buildPlayerNameMap(players) {
   return { nameToId, options };
 }
 
+// Cari ID pemain dari teks yang diketik, TIDAK peduli huruf besar/kecil ataupun
+// spasi berlebih di awal/akhir (HP sering otomatis kapitalisasi huruf pertama).
+function resolvePlayerId(nameToId, typedText) {
+  const typed = (typedText || "").trim();
+  if (nameToId[typed] != null) return nameToId[typed]; // cocok persis dulu (lebih cepat)
+  const typedLower = typed.toLowerCase();
+  const foundKey = Object.keys(nameToId).find((name) => name.toLowerCase() === typedLower);
+  return foundKey ? nameToId[foundKey] : undefined;
+}
+
 // Komponen pencarian nama pemain custom (bukan <datalist> bawaan browser, supaya
 // perilakunya konsisten baik di browser biasa maupun di PWA yang sudah di-install —
 // <datalist> sering tidak muncul sama sekali di iOS saat mode standalone/installed).
@@ -491,7 +501,7 @@ async function renderSubmit(container) {
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
     const opponentName = wrap.querySelector("#opponent-input").value.trim();
-    const opponentId = opponentNameToId[opponentName];
+    const opponentId = resolvePlayerId(opponentNameToId, opponentName);
     const targetGames = Number(wrap.querySelector("#target-games").value);
     const iWon = wrap.querySelector("#who-won").value === "me";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
@@ -576,9 +586,9 @@ async function renderSubmitDoubles(container) {
     const partnerName = wrap.querySelector("#partner-input").value.trim();
     const opp1Name = wrap.querySelector("#opp1-input").value.trim();
     const opp2Name = wrap.querySelector("#opp2-input").value.trim();
-    const team1Player2Id = doublesNameToId[partnerName];
-    const team2Player1Id = doublesNameToId[opp1Name];
-    const team2Player2Id = doublesNameToId[opp2Name];
+    const team1Player2Id = resolvePlayerId(doublesNameToId, partnerName);
+    const team2Player1Id = resolvePlayerId(doublesNameToId, opp1Name);
+    const team2Player2Id = resolvePlayerId(doublesNameToId, opp2Name);
     const iWon = wrap.querySelector("#who-won").value === "team1";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
