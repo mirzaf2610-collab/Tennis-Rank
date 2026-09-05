@@ -72,7 +72,7 @@ router.get("/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
 
   const players = await prisma.player.findMany({
-    where: { isActive: true, isApproved: true, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
+    where: { isActive: true, isApproved: true, isDummy: false, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
     select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true, noResponseCount: true },
   });
 
@@ -158,8 +158,9 @@ router.get("/players/:id", async (req, res) => {
 
 // GET /api/players - list semua pemain aktif (untuk pilih lawan saat submit match)
 router.get("/players", requireAuth, async (req, res) => {
+  const includeDummy = req.query.includeDummy === "true";
   const players = await prisma.player.findMany({
-    where: { isActive: true, isApproved: true },
+    where: { isActive: true, isApproved: true, ...(includeDummy ? {} : { isDummy: false }) },
     select: { id: true, name: true, currentRating: true },
     orderBy: { name: "asc" },
   });

@@ -13,7 +13,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
 
   const players = await prisma.player.findMany({
-    where: { isActive: true, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
+    where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
     select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
   });
 

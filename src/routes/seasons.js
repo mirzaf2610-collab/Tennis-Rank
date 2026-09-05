@@ -53,7 +53,7 @@ router.get("/seasons/:id/leaderboard", async (req, res) => {
   if (season.isActive) {
     // Season aktif -> hitung dari data live, dibatasi sejak season ini mulai
     const players = await prisma.player.findMany({
-      where: { isActive: true, isApproved: true },
+      where: { isActive: true, isApproved: true, isDummy: false },
       select: { id: true, name: true, photoUrl: true, currentRating: true, matchesPlayed: true, isProvisional: true,
         doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, noResponseCount: true },
     });
@@ -112,7 +112,7 @@ router.post("/admin/end-season", requireAuth, requireAdmin, async (req, res) => 
   const { newSeasonName } = req.body;
   const currentSeason = await getActiveSeason();
 
-  const players = await prisma.player.findMany({ where: { isActive: true } });
+  const players = await prisma.player.findMany({ where: { isActive: true, isDummy: false } });
 
   try {
     await prisma.$transaction(async (tx) => {
