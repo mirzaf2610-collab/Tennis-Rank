@@ -453,7 +453,7 @@ async function renderSubmit(container) {
   const wrap = el(`
     <div class="card">
       <h2>Input hasil match</h2>
-      <label>Lawan</label>
+      <label style="font-size:16px;font-weight:600;color:#1a1a1a">Lawan</label>
       <select id="opponent"></select>
       <label>Format (main sampai berapa game)</label>
       <select id="target-games">
@@ -487,22 +487,30 @@ async function renderSubmit(container) {
   try {
     const { players } = await api("/players");
     const select = wrap.querySelector("#opponent");
-    select.innerHTML = players
+    const options = players
       .filter((p) => p.id !== state.player.id)
       .map((p) => `<option value="${p.id}">${p.name}</option>`)
       .join("");
+    select.innerHTML = `<option value="" selected disabled>-- Pilih lawan --</option>${options}`;
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
   }
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
-    const opponentId = Number(wrap.querySelector("#opponent").value);
+    const opponentValue = wrap.querySelector("#opponent").value;
     const targetGames = Number(wrap.querySelector("#target-games").value);
     const iWon = wrap.querySelector("#who-won").value === "me";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
+
+    if (!opponentValue) {
+      errorEl.textContent = "Pilih lawan terlebih dahulu";
+      errorEl.style.display = "block";
+      return;
+    }
+    const opponentId = Number(opponentValue);
 
     const winnerId = iWon ? state.player.id : opponentId;
     const loserId = iWon ? opponentId : state.player.id;
@@ -528,11 +536,11 @@ async function renderSubmitDoubles(container) {
     <div class="card">
       <h2>Input hasil ganda</h2>
       <p class="muted">Anda otomatis jadi pemain 1 di Tim Anda.</p>
-      <label>Partner Anda (Tim Anda)</label>
+      <label style="font-size:16px;font-weight:600;color:#1a1a1a">Partner Anda (Tim Anda)</label>
       <select id="partner"></select>
-      <label>Lawan 1</label>
+      <label style="font-size:16px;font-weight:600;color:#1a1a1a">Lawan 1</label>
       <select id="opp1"></select>
-      <label>Lawan 2</label>
+      <label style="font-size:16px;font-weight:600;color:#1a1a1a">Lawan 2</label>
       <select id="opp2"></select>
       <label>Tim mana yang menang?</label>
       <select id="who-won">
@@ -553,22 +561,32 @@ async function renderSubmitDoubles(container) {
     const { players } = await api("/players");
     const others = players.filter((p) => p.id !== state.player.id);
     const options = others.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
-    wrap.querySelector("#partner").innerHTML = options;
-    wrap.querySelector("#opp1").innerHTML = options;
-    wrap.querySelector("#opp2").innerHTML = options;
+    wrap.querySelector("#partner").innerHTML = `<option value="" selected disabled>-- Pilih partner --</option>${options}`;
+    wrap.querySelector("#opp1").innerHTML = `<option value="" selected disabled>-- Pilih lawan 1 --</option>${options}`;
+    wrap.querySelector("#opp2").innerHTML = `<option value="" selected disabled>-- Pilih lawan 2 --</option>${options}`;
   } catch (err) {
     wrap.querySelector("#f-error").textContent = err.message;
     wrap.querySelector("#f-error").style.display = "block";
   }
 
   wrap.querySelector("#submit-btn").addEventListener("click", async () => {
-    const team1Player2Id = Number(wrap.querySelector("#partner").value);
-    const team2Player1Id = Number(wrap.querySelector("#opp1").value);
-    const team2Player2Id = Number(wrap.querySelector("#opp2").value);
+    const partnerValue = wrap.querySelector("#partner").value;
+    const opp1Value = wrap.querySelector("#opp1").value;
+    const opp2Value = wrap.querySelector("#opp2").value;
     const iWon = wrap.querySelector("#who-won").value === "team1";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
+
+    if (!partnerValue || !opp1Value || !opp2Value) {
+      errorEl.textContent = "Pilih partner dan kedua lawan terlebih dahulu";
+      errorEl.style.display = "block";
+      return;
+    }
+
+    const team1Player2Id = Number(partnerValue);
+    const team2Player1Id = Number(opp1Value);
+    const team2Player2Id = Number(opp2Value);
 
     const ids = [team1Player2Id, team2Player1Id, team2Player2Id];
     if (new Set(ids).size !== 3) {
@@ -1072,7 +1090,7 @@ async function renderProfile(container) {
     wrap.querySelector("#profile-stats").innerHTML = `<p class="error">${err.message}</p>`;
   }
 
-  const historyWrap = el(`<div class="card"><h2>Histori match</h2><div id="history-list">Memuat...</div></div>`);
+  const historyWrap = el(`<div class="card"><h2>Histori Single</h2><div id="history-list">Memuat...</div></div>`);
   container.appendChild(historyWrap);
   try {
     const { matches } = await api(`/matches?player_id=${state.player.id}`);
@@ -1087,12 +1105,50 @@ async function renderProfile(container) {
           const change = won ? m.ratingWinnerChange : m.ratingLoserChange;
           const statusLabel = { pending: "Menunggu konfirmasi", disputed: "Dibatalkan", expired: "Kedaluwarsa" };
           const changeText = change != null ? (change >= 0 ? `+${Math.round(change)}` : Math.round(change)) : (statusLabel[m.status] || m.status);
-          return `<div class="row"><span>${won ? "Menang" : "Kalah"} vs ${opponent} (${m.score})</span><span>${changeText}</span></div>`;
+          const reasonHtml = m.status === "disputed" && m.rejectReason
+            ? `<div class="muted" style="font-size:12px;margin-top:2px">Alasan ditolak: ${m.rejectReason}</div>`
+            : "";
+          return `<div class="row" style="flex-direction:column;align-items:stretch">
+            <div style="display:flex;justify-content:space-between">
+              <span>${won ? "Menang" : "Kalah"} vs ${opponent} (${m.score})</span><span>${changeText}</span>
+            </div>
+            ${reasonHtml}
+          </div>`;
         })
         .join("");
     }
   } catch (err) {
     historyWrap.querySelector("#history-list").innerHTML = `<p class="error">${err.message}</p>`;
+  }
+
+  const doublesHistoryWrap = el(`<div class="card"><h2>Histori Ganda</h2><div id="doubles-history-list">Memuat...</div></div>`);
+  container.appendChild(doublesHistoryWrap);
+  try {
+    const { matches } = await api(`/doubles/matches?player_id=${state.player.id}`);
+    const list = doublesHistoryWrap.querySelector("#doubles-history-list");
+    if (matches.length === 0) {
+      list.innerHTML = `<p class="muted">Belum ada histori match ganda.</p>`;
+    } else {
+      list.innerHTML = matches
+        .map((m) => {
+          const statusLabel = { pending: "Menunggu konfirmasi", disputed: "Dibatalkan", expired: "Kedaluwarsa" };
+          const changeText = m.ratingChange != null
+            ? (m.ratingChange >= 0 ? `+${Math.round(m.ratingChange)}` : Math.round(m.ratingChange))
+            : (statusLabel[m.status] || m.status);
+          const reasonHtml = m.status === "disputed" && m.rejectReason
+            ? `<div class="muted" style="font-size:12px;margin-top:2px">Alasan ditolak: ${m.rejectReason}</div>`
+            : "";
+          return `<div class="row" style="flex-direction:column;align-items:stretch">
+            <div style="display:flex;justify-content:space-between">
+              <span>${m.won ? "Menang" : "Kalah"} (& ${m.partner}) vs ${m.opponents} (${m.score})</span><span>${changeText}</span>
+            </div>
+            ${reasonHtml}
+          </div>`;
+        })
+        .join("");
+    }
+  } catch (err) {
+    doublesHistoryWrap.querySelector("#doubles-history-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
 }
 
