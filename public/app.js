@@ -401,7 +401,7 @@ async function renderLeaderboard(container) {
         const rows = leaderboard
           .map((p) => {
             const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
-            if (p.matchesPlayed === maxMatches) badgeTexts.push(`⚡ Antu Lapangan`);
+            if (p.matchesPlayed === maxMatches && p.matchesPlayed > 15) badgeTexts.push(`⚡ Antu Lapangan`);
             const gelarText = badgeTexts.length ? badgeTexts.join("<br/>") : `<span class="muted">-</span>`;
             const noRespText = p.noResponseCount > 0
               ? `<span style="color:#c62828">${p.noResponseCount}x</span>`
@@ -893,7 +893,7 @@ async function renderRules(container) {
         ✅ <strong>Unbeaten</strong> — sedang menang 3x beruntun<br/>
         😅 <strong>Looser</strong> — sedang kalah 3x beruntun<br/>
         🗡️ <strong>Giant Slayer</strong> — pernah menang lawan yang rating-nya jauh di atas<br/>
-        ⚡ <strong>Antu Lapangan</strong> — jumlah main terbanyak saat ini
+        ⚡ <strong>Antu Lapangan</strong> — jumlah main terbanyak saat ini (min. 16 match)
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">8. Etika Bermain</h3>
