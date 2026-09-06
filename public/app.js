@@ -314,8 +314,8 @@ async function renderLeaderboard(container) {
     <div class="card">
       <h2>Ranking</h2>
       <div class="nav" style="margin-bottom:0.75rem">
-        <button data-mode="single" class="active">Single</button>
-        <button data-mode="double">Ganda</button>
+        <button data-mode="single">Single</button>
+        <button data-mode="double" class="active">Ganda</button>
       </div>
       <div style="margin-bottom:1rem">
         <label style="font-size:12px">Season</label>
@@ -346,7 +346,7 @@ async function renderLeaderboard(container) {
     wrap.querySelector("#season-select").innerHTML = `<option>Gagal memuat season</option>`;
   }
 
-  const liveWrap = el(`<div class="card"><h2>🎾 Live Score</h2><div id="live-score-list">Memuat...</div></div>`);
+  const liveWrap = el(`<div class="card"><h2>🎾 Score Update</h2><div id="live-score-list">Memuat...</div></div>`);
   container.appendChild(liveWrap);
   try {
     const { matches } = await api("/recent-matches");
@@ -373,7 +373,7 @@ async function renderLeaderboard(container) {
     liveWrap.querySelector("#live-score-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
 
-  let currentMode = "single";
+  let currentMode = "double";
 
   async function loadBoard() {
     const list = wrap.querySelector("#lb-list");
@@ -414,8 +414,8 @@ async function renderLeaderboard(container) {
                 <td>${p.wins}</td>
                 <td>${p.losses}</td>
                 <td>${p.winRate}%</td>
-                <td>${noRespText}</td>
                 <td style="font-size:11px">${gelarText}</td>
+                <td>${noRespText}</td>
               </tr>`;
           })
           .join("");
@@ -423,7 +423,7 @@ async function renderLeaderboard(container) {
           <div style="overflow-x:auto">
             <table class="lb-table">
               <thead>
-                <tr><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Tdk Respon</th><th>Gelar</th></tr>
+                <tr><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
