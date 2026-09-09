@@ -743,6 +743,70 @@ async function renderAdmin(container) {
     }
   });
 
+  const matchWrap = el(`
+    <div class="card">
+      <h2>Kelola Match</h2>
+      <div class="nav" style="margin-bottom:0.75rem">
+        <button data-mtype="singles" class="active">Single</button>
+        <button data-mtype="doubles">Ganda</button>
+      </div>
+      <div id="admin-match-list">Memuat...</div>
+    </div>
+  `);
+  container.appendChild(matchWrap);
+
+  const statusLabelAdmin = { pending: "Menunggu konfirmasi", confirmed: "Confirmed", disputed: "Dibatalkan", expired: "Kedaluwarsa" };
+
+  async function loadAdminMatches(mtype) {
+    const list = matchWrap.querySelector("#admin-match-list");
+    list.innerHTML = "Memuat...";
+    try {
+      const { matches } = await api(`/admin/matches?type=${mtype}&limit=20`);
+      if (matches.length === 0) {
+        list.innerHTML = `<p class="muted">Belum ada match.</p>`;
+        return;
+      }
+      list.innerHTML = "";
+      matches.forEach((m) => {
+        const item = el(`
+          <div class="row" style="flex-direction:column; align-items:stretch; gap:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+              <div>
+                <div style="font-size:14px">${m.label}</div>
+                <div class="muted" style="font-size:11px">${statusLabelAdmin[m.status] || m.status} &middot; ${new Date(m.date).toLocaleDateString("id-ID")}</div>
+              </div>
+              <button class="btn danger" style="margin-top:0; width:auto; padding:6px 14px; font-size:12px" data-id="${m.id}">Hapus</button>
+            </div>
+          </div>
+        `);
+        item.querySelector("button").addEventListener("click", async () => {
+          const confirmMsg = m.status === "confirmed"
+            ? `Yakin hapus match ini? Rating yang sudah berubah akan DIKEMBALIKAN otomatis.\n\n${m.label}`
+            : `Yakin hapus match ini?\n\n${m.label}`;
+          if (!confirm(confirmMsg)) return;
+          try {
+            const data = await api(`/admin/matches/${m.id}?type=${mtype}`, { method: "DELETE" });
+            alert(data.message);
+            loadAdminMatches(mtype);
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        list.appendChild(item);
+      });
+    } catch (err) {
+      list.innerHTML = `<p class="error">${err.message}</p>`;
+    }
+  }
+  matchWrap.querySelectorAll("[data-mtype]").forEach((b) => {
+    b.addEventListener("click", () => {
+      matchWrap.querySelectorAll("[data-mtype]").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      loadAdminMatches(b.dataset.mtype);
+    });
+  });
+  loadAdminMatches("singles");
+
   const wrap = el(`<div class="card"><h2>Persetujuan Pendaftar Baru</h2><div id="pending-players-list">Memuat...</div></div>`);
   container.appendChild(wrap);
 
