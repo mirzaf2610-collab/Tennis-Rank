@@ -56,138 +56,153 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
     }
   }
 
-  const tournament = await prisma.$transaction(async (tx) => {
-    const t = await tx.tournament.create({ data: { name, format, type: tType } });
+  try {
+    const tournament = await prisma.$transaction(async (tx) => {
+      const t = await tx.tournament.create({ data: { name, format, type: tType } });
 
-    const createdParticipants = [];
-    for (let i = 0; i < normalized.length; i++) {
-      const cp = await tx.tournamentParticipant.create({
-        data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, seed: i + 1 },
-      });
-      createdParticipants.push(cp);
-    }
-    const participantIdsOrdered = createdParticipants.map((p) => p.id);
-
-    if (format === "round_robin") {
-      let idx = 0;
-      for (let i = 0; i < participantIdsOrdered.length; i++) {
-        for (let j = i + 1; j < participantIdsOrdered.length; j++) {
-          await tx.tournamentMatch.create({
-            data: {
-              tournamentId: t.id, round: 1, matchIndex: idx++,
-              participant1Id: participantIdsOrdered[i], participant2Id: participantIdsOrdered[j],
-              status: "pending",
-            },
-          });
-        }
+      const createdParticipants = [];
+      for (let i = 0; i < normalized.length; i++) {
+        const cp = await tx.tournamentParticipant.create({
+          data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, seed: i + 1 },
+        });
+        createdParticipants.push(cp);
       }
-    } else {
-      const bracketSize = nextPowerOfTwo(participantIdsOrdered.length);
-      const slots = [...participantIdsOrdered];
-      while (slots.length < bracketSize) slots.push(null);
+      const participantIdsOrdered = createdParticipants.map((p) => p.id);
 
-      const numRounds = Math.log2(bracketSize);
-      const roundMatches = {};
-      for (let r = 1; r <= numRounds; r++) {
-        const matchesInRound = bracketSize / Math.pow(2, r);
-        roundMatches[r] = [];
-        for (let mi = 0; mi < matchesInRound; mi++) {
-          const created = await tx.tournamentMatch.create({
-            data: { tournamentId: t.id, round: r, matchIndex: mi, status: "pending" },
-          });
-          roundMatches[r].push(created);
+      if (format === "round_robin") {
+        let idx = 0;
+        for (let i = 0; i < participantIdsOrdered.length; i++) {
+          for (let j = i + 1; j < participantIdsOrdered.length; j++) {
+            await tx.tournamentMatch.create({
+              data: {
+                tournamentId: t.id, round: 1, matchIndex: idx++,
+                participant1Id: participantIdsOrdered[i], participant2Id: participantIdsOrdered[j],
+                status: "pending",
+              },
+            });
+          }
         }
-      }
-      for (let mi = 0; mi < roundMatches[1].length; mi++) {
-        const p1 = slots[mi * 2];
-        const p2 = slots[mi * 2 + 1];
-        const m = roundMatches[1][mi];
-        if (p1 && p2) {
-          await tx.tournamentMatch.update({ where: { id: m.id }, data: { participant1Id: p1, participant2Id: p2 } });
-        } else if (p1 || p2) {
-          const winner = p1 || p2;
-          await tx.tournamentMatch.update({
-            where: { id: m.id },
-            data: { participant1Id: p1, participant2Id: p2, winnerParticipantId: winner, status: "bye" },
-          });
-          if (numRounds >= 2) {
-            const nextMatch = roundMatches[2][Math.floor(mi / 2)];
-            const slotField = mi % 2 === 0 ? "participant1Id" : "participant2Id";
-            await tx.tournamentMatch.update({ where: { id: nextMatch.id }, data: { [slotField]: winner } });
+      } else {
+        const bracketSize = nextPowerOfTwo(participantIdsOrdered.length);
+        const slots = [...participantIdsOrdered];
+        while (slots.length < bracketSize) slots.push(null);
+
+        const numRounds = Math.log2(bracketSize);
+        const roundMatches = {};
+        for (let r = 1; r <= numRounds; r++) {
+          const matchesInRound = bracketSize / Math.pow(2, r);
+          roundMatches[r] = [];
+          for (let mi = 0; mi < matchesInRound; mi++) {
+            const created = await tx.tournamentMatch.create({
+              data: { tournamentId: t.id, round: r, matchIndex: mi, status: "pending" },
+            });
+            roundMatches[r].push(created);
+          }
+        }
+        for (let mi = 0; mi < roundMatches[1].length; mi++) {
+          const p1 = slots[mi * 2];
+          const p2 = slots[mi * 2 + 1];
+          const m = roundMatches[1][mi];
+          if (p1 && p2) {
+            await tx.tournamentMatch.update({ where: { id: m.id }, data: { participant1Id: p1, participant2Id: p2 } });
+          } else if (p1 || p2) {
+            const winner = p1 || p2;
+            await tx.tournamentMatch.update({
+              where: { id: m.id },
+              data: { participant1Id: p1, participant2Id: p2, winnerParticipantId: winner, status: "bye" },
+            });
+            if (numRounds >= 2) {
+              const nextMatch = roundMatches[2][Math.floor(mi / 2)];
+              const slotField = mi % 2 === 0 ? "participant1Id" : "participant2Id";
+              await tx.tournamentMatch.update({ where: { id: nextMatch.id }, data: { [slotField]: winner } });
+            }
           }
         }
       }
-    }
 
-    return t;
-  });
+      return t;
+    });
 
-  res.status(201).json({ tournamentId: tournament.id, message: "Turnamen berhasil dibuat" });
+    res.status(201).json({ tournamentId: tournament.id, message: "Turnamen berhasil dibuat" });
+  } catch (e) {
+    console.error("Gagal buat turnamen:", e);
+    res.status(500).json({ error: { code: "CREATE_TOURNAMENT_FAILED", message: e.message } });
+  }
 });
 
 // GET /api/tournaments - daftar semua turnamen (publik)
 router.get("/tournaments", async (req, res) => {
-  const tournaments = await prisma.tournament.findMany({ orderBy: { createdAt: "desc" } });
-  res.json({ tournaments });
+  try {
+    const tournaments = await prisma.tournament.findMany({ orderBy: { createdAt: "desc" } });
+    res.json({ tournaments });
+  } catch (e) {
+    console.error("Gagal ambil daftar turnamen:", e);
+    res.status(500).json({ error: { code: "LIST_TOURNAMENTS_FAILED", message: e.message } });
+  }
 });
 
 // GET /api/tournaments/:id - detail turnamen
 router.get("/tournaments/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const tournament = await prisma.tournament.findUnique({ where: { id } });
-  if (!tournament) {
-    return res.status(404).json({ error: { code: "TOURNAMENT_NOT_FOUND", message: "Turnamen tidak ditemukan" } });
-  }
+  try {
+    const tournament = await prisma.tournament.findUnique({ where: { id } });
+    if (!tournament) {
+      return res.status(404).json({ error: { code: "TOURNAMENT_NOT_FOUND", message: "Turnamen tidak ditemukan" } });
+    }
 
-  const participants = await prisma.tournamentParticipant.findMany({
-    where: { tournamentId: id },
-    include: { player1: true, player2: true },
-    orderBy: { seed: "asc" },
-  });
-
-  const matches = await prisma.tournamentMatch.findMany({
-    where: { tournamentId: id },
-    include: {
-      participant1: { include: { player1: true, player2: true } },
-      participant2: { include: { player1: true, player2: true } },
-      winnerParticipant: { include: { player1: true, player2: true } },
-    },
-    orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
-  });
-
-  const matchesOut = matches.map((m) => ({
-    id: m.id,
-    round: m.round,
-    matchIndex: m.matchIndex,
-    participant1: m.participant1 ? { id: m.participant1.id, label: participantLabel(m.participant1) } : null,
-    participant2: m.participant2 ? { id: m.participant2.id, label: participantLabel(m.participant2) } : null,
-    winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: participantLabel(m.winnerParticipant) } : null,
-    status: m.status,
-  }));
-
-  let standings = null;
-  if (tournament.format === "round_robin") {
-    const wins = {};
-    const losses = {};
-    participants.forEach((p) => { wins[p.id] = 0; losses[p.id] = 0; });
-    matches.forEach((m) => {
-      if (m.status === "completed" && m.winnerParticipantId) {
-        wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1;
-        const loserId = m.participant1Id === m.winnerParticipantId ? m.participant2Id : m.participant1Id;
-        losses[loserId] = (losses[loserId] || 0) + 1;
-      }
+    const participants = await prisma.tournamentParticipant.findMany({
+      where: { tournamentId: id },
+      include: { player1: true, player2: true },
+      orderBy: { seed: "asc" },
     });
-    standings = participants
-      .map((p) => ({ participantId: p.id, label: participantLabel(p), wins: wins[p.id] || 0, losses: losses[p.id] || 0 }))
-      .sort((a, b) => b.wins - a.wins);
-  }
 
-  res.json({
-    tournament,
-    participants: participants.map((p) => ({ id: p.id, label: participantLabel(p), seed: p.seed })),
-    matches: matchesOut,
-    standings,
-  });
+    const matches = await prisma.tournamentMatch.findMany({
+      where: { tournamentId: id },
+      include: {
+        participant1: { include: { player1: true, player2: true } },
+        participant2: { include: { player1: true, player2: true } },
+        winnerParticipant: { include: { player1: true, player2: true } },
+      },
+      orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
+    });
+
+    const matchesOut = matches.map((m) => ({
+      id: m.id,
+      round: m.round,
+      matchIndex: m.matchIndex,
+      participant1: m.participant1 ? { id: m.participant1.id, label: participantLabel(m.participant1) } : null,
+      participant2: m.participant2 ? { id: m.participant2.id, label: participantLabel(m.participant2) } : null,
+      winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: participantLabel(m.winnerParticipant) } : null,
+      status: m.status,
+    }));
+
+    let standings = null;
+    if (tournament.format === "round_robin") {
+      const wins = {};
+      const losses = {};
+      participants.forEach((p) => { wins[p.id] = 0; losses[p.id] = 0; });
+      matches.forEach((m) => {
+        if (m.status === "completed" && m.winnerParticipantId) {
+          wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1;
+          const loserId = m.participant1Id === m.winnerParticipantId ? m.participant2Id : m.participant1Id;
+          losses[loserId] = (losses[loserId] || 0) + 1;
+        }
+      });
+      standings = participants
+        .map((p) => ({ participantId: p.id, label: participantLabel(p), wins: wins[p.id] || 0, losses: losses[p.id] || 0 }))
+        .sort((a, b) => b.wins - a.wins);
+    }
+
+    res.json({
+      tournament,
+      participants: participants.map((p) => ({ id: p.id, label: participantLabel(p), seed: p.seed })),
+      matches: matchesOut,
+      standings,
+    });
+  } catch (e) {
+    console.error("Gagal ambil detail turnamen:", e);
+    res.status(500).json({ error: { code: "TOURNAMENT_DETAIL_FAILED", message: e.message } });
+  }
 });
 
 // POST /api/admin/tournaments/:id/matches/:tmId/submit
