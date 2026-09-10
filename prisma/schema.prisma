@@ -275,7 +275,8 @@ model TournamentParticipant {
   tournamentId Int  @map("tournament_id")
   player1Id    Int  @map("player1_id")
   player2Id    Int? @map("player2_id") // cuma terisi untuk turnamen Ganda
-  seed         Int
+  seed         Int  // urutan posisi/seeding yang diatur admin
+  groupNumber  Int? @map("group_number") // cuma terisi untuk format group_knockout
 
   tournament Tournament @relation(fields: [tournamentId], references: [id])
   player1    Player     @relation("TournamentParticipantP1", fields: [player1Id], references: [id])
@@ -291,6 +292,8 @@ model TournamentParticipant {
 model TournamentMatch {
   id                  Int      @id @default(autoincrement())
   tournamentId        Int      @map("tournament_id")
+  stage               String   @default("main") // "main" (format biasa) | "group" | "knockout" (buat group_knockout)
+  groupNumber         Int?     @map("group_number") // cuma terisi kalau stage="group"
   round               Int      @default(1)
   matchIndex          Int      @map("match_index")
   participant1Id      Int?     @map("participant1_id")
