@@ -1325,8 +1325,8 @@ async function renderTournamentDetail(container) {
       }
     } else if (tournament.format === "cappuccino") {
       html += `<h3 style="margin-top:1rem;font-size:15px">☕ Peringkat Individu</h3>`;
-      html += `<table class="lb-table"><thead><tr><th>#</th><th>Peserta</th><th>Poin</th></tr></thead><tbody>`;
-      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}</td><td>+${r.points}</td></tr>`; });
+      html += `<table class="lb-table"><thead><tr><th>#</th><th>Peserta</th><th>Poin</th><th>Menang</th><th>Game Menang</th></tr></thead><tbody>`;
+      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}</td><td>+${r.points}</td><td>${r.wins}</td><td>${r.gamesWon}</td></tr>`; });
       html += `</tbody></table>`;
       cappuccinoRounds.forEach((rd) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Ronde ${rd.round}</h3>`;
