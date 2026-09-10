@@ -25,18 +25,81 @@ function participantLabel(p) {
   return p.player2 ? `${p.player1.name}/${p.player2.name}` : p.player1.name;
 }
 
-// POST /api/admin/tournaments - buat turnamen baru (Single atau Ganda)
+// Buat match round-robin (semua lawan semua) untuk sekelompok participantId.
+// stage: "main" (format Round Robin biasa) atau "group" (fase grup di Setengah Kompetisi)
+async function generateRoundRobinMatches(tx, tournamentId, participantIds, stage, groupNumber) {
+  let idx = 0;
+  for (let i = 0; i < participantIds.length; i++) {
+    for (let j = i + 1; j < participantIds.length; j++) {
+      await tx.tournamentMatch.create({
+        data: {
+          tournamentId, stage, groupNumber: groupNumber ?? null,
+          round: 0, matchIndex: idx++,
+          participant1Id: participantIds[i], participant2Id: participantIds[j],
+          status: "pending",
+        },
+      });
+    }
+  }
+}
+
+// Buat bracket eliminasi dari sekelompok participantId (urut = seeding).
+// stage: "main" (format Bracket biasa) atau "knockout" (fase gugur di Setengah Kompetisi)
+async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
+  const bracketSize = nextPowerOfTwo(participantIds.length);
+  const slots = [...participantIds];
+  while (slots.length < bracketSize) slots.push(null);
+
+  const numRounds = Math.log2(bracketSize);
+  const roundMatches = {};
+  for (let r = 1; r <= numRounds; r++) {
+    const matchesInRound = bracketSize / Math.pow(2, r);
+    roundMatches[r] = [];
+    for (let mi = 0; mi < matchesInRound; mi++) {
+      const created = await tx.tournamentMatch.create({
+        data: { tournamentId, stage, round: r, matchIndex: mi, status: "pending" },
+      });
+      roundMatches[r].push(created);
+    }
+  }
+  for (let mi = 0; mi < roundMatches[1].length; mi++) {
+    const p1 = slots[mi * 2];
+    const p2 = slots[mi * 2 + 1];
+    const m = roundMatches[1][mi];
+    if (p1 && p2) {
+      await tx.tournamentMatch.update({ where: { id: m.id }, data: { participant1Id: p1, participant2Id: p2 } });
+    } else if (p1 || p2) {
+      const winner = p1 || p2;
+      await tx.tournamentMatch.update({
+        where: { id: m.id },
+        data: { participant1Id: p1, participant2Id: p2, winnerParticipantId: winner, status: "bye" },
+      });
+      if (numRounds >= 2) {
+        const nextMatch = roundMatches[2][Math.floor(mi / 2)];
+        const slotField = mi % 2 === 0 ? "participant1Id" : "participant2Id";
+        await tx.tournamentMatch.update({ where: { id: nextMatch.id }, data: { [slotField]: winner } });
+      }
+    }
+  }
+}
+
+// POST /api/admin/tournaments - buat turnamen baru
+// format: "round_robin" | "bracket" | "group_knockout"
 // Untuk Ganda, participantIds berisi ARRAY PASANGAN: [[id1,id2], [id3,id4], ...]
 // Untuk Single, participantIds berisi array id biasa: [id1, id2, id3, ...]
+// Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
-  const { name, format, type, participantIds } = req.body;
+  const { name, format, type, participantIds, numGroups } = req.body;
   const tType = type === "doubles" ? "doubles" : "singles";
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
     return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Nama, format, dan minimal 2 peserta wajib diisi" } });
   }
-  if (format !== "round_robin" && format !== "bracket") {
-    return res.status(400).json({ error: { code: "INVALID_FORMAT", message: "Format harus round_robin atau bracket" } });
+  if (!["round_robin", "bracket", "group_knockout"].includes(format)) {
+    return res.status(400).json({ error: { code: "INVALID_FORMAT", message: "Format tidak valid" } });
+  }
+  if (format === "group_knockout" && (!numGroups || numGroups < 2)) {
+    return res.status(400).json({ error: { code: "INVALID_GROUPS", message: "Jumlah grup minimal 2" } });
   }
 
   let normalized;
@@ -62,60 +125,23 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
 
       const createdParticipants = [];
       for (let i = 0; i < normalized.length; i++) {
+        const groupNumber = format === "group_knockout" ? (i % numGroups) + 1 : null;
         const cp = await tx.tournamentParticipant.create({
-          data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, seed: i + 1 },
+          data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, seed: i + 1, groupNumber },
         });
         createdParticipants.push(cp);
       }
-      const participantIdsOrdered = createdParticipants.map((p) => p.id);
 
       if (format === "round_robin") {
-        let idx = 0;
-        for (let i = 0; i < participantIdsOrdered.length; i++) {
-          for (let j = i + 1; j < participantIdsOrdered.length; j++) {
-            await tx.tournamentMatch.create({
-              data: {
-                tournamentId: t.id, round: 1, matchIndex: idx++,
-                participant1Id: participantIdsOrdered[i], participant2Id: participantIdsOrdered[j],
-                status: "pending",
-              },
-            });
-          }
-        }
+        await generateRoundRobinMatches(tx, t.id, createdParticipants.map((p) => p.id), "main", null);
+      } else if (format === "bracket") {
+        await generateBracketMatches(tx, t.id, createdParticipants.map((p) => p.id), "main");
       } else {
-        const bracketSize = nextPowerOfTwo(participantIdsOrdered.length);
-        const slots = [...participantIdsOrdered];
-        while (slots.length < bracketSize) slots.push(null);
-
-        const numRounds = Math.log2(bracketSize);
-        const roundMatches = {};
-        for (let r = 1; r <= numRounds; r++) {
-          const matchesInRound = bracketSize / Math.pow(2, r);
-          roundMatches[r] = [];
-          for (let mi = 0; mi < matchesInRound; mi++) {
-            const created = await tx.tournamentMatch.create({
-              data: { tournamentId: t.id, round: r, matchIndex: mi, status: "pending" },
-            });
-            roundMatches[r].push(created);
-          }
-        }
-        for (let mi = 0; mi < roundMatches[1].length; mi++) {
-          const p1 = slots[mi * 2];
-          const p2 = slots[mi * 2 + 1];
-          const m = roundMatches[1][mi];
-          if (p1 && p2) {
-            await tx.tournamentMatch.update({ where: { id: m.id }, data: { participant1Id: p1, participant2Id: p2 } });
-          } else if (p1 || p2) {
-            const winner = p1 || p2;
-            await tx.tournamentMatch.update({
-              where: { id: m.id },
-              data: { participant1Id: p1, participant2Id: p2, winnerParticipantId: winner, status: "bye" },
-            });
-            if (numRounds >= 2) {
-              const nextMatch = roundMatches[2][Math.floor(mi / 2)];
-              const slotField = mi % 2 === 0 ? "participant1Id" : "participant2Id";
-              await tx.tournamentMatch.update({ where: { id: nextMatch.id }, data: { [slotField]: winner } });
-            }
+        // group_knockout: buat fase grup dulu, fase knockout menyusul manual lewat tombol admin
+        for (let g = 1; g <= numGroups; g++) {
+          const groupParticipantIds = createdParticipants.filter((p) => p.groupNumber === g).map((p) => p.id);
+          if (groupParticipantIds.length >= 2) {
+            await generateRoundRobinMatches(tx, t.id, groupParticipantIds, "group", g);
           }
         }
       }
@@ -130,6 +156,68 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
   }
 });
 
+// POST /api/admin/tournaments/:id/start-knockout
+// Ambil top-N tiap grup (default 2), buat bracket fase knockout.
+router.post("/admin/tournaments/:id/start-knockout", requireAuth, requireAdmin, async (req, res) => {
+  const tournamentId = Number(req.params.id);
+  const advancePerGroup = req.body.advancePerGroup || 2;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      if (!tournament) throw Object.assign(new Error("Turnamen tidak ditemukan"), { status: 404 });
+      if (tournament.format !== "group_knockout") {
+        throw Object.assign(new Error("Turnamen ini bukan format Setengah Kompetisi"), { status: 400 });
+      }
+
+      const existingKnockout = await tx.tournamentMatch.count({ where: { tournamentId, stage: "knockout" } });
+      if (existingKnockout > 0) {
+        throw Object.assign(new Error("Babak knockout sudah pernah dibuat untuk turnamen ini"), { status: 409 });
+      }
+
+      const pendingGroupMatches = await tx.tournamentMatch.count({
+        where: { tournamentId, stage: "group", status: "pending" },
+      });
+      if (pendingGroupMatches > 0) {
+        throw Object.assign(new Error("Masih ada match fase grup yang belum selesai. Selesaikan dulu semuanya."), { status: 400 });
+      }
+
+      const participants = await tx.tournamentParticipant.findMany({ where: { tournamentId } });
+      const groupMatches = await tx.tournamentMatch.findMany({ where: { tournamentId, stage: "group" } });
+
+      const numGroups = Math.max(...participants.map((p) => p.groupNumber || 0));
+      const qualifiersByRank = []; // qualifiersByRank[0] = semua juara grup, [1] = semua runner-up, dst
+
+      for (let g = 1; g <= numGroups; g++) {
+        const groupParticipants = participants.filter((p) => p.groupNumber === g);
+        const wins = {};
+        groupParticipants.forEach((p) => { wins[p.id] = 0; });
+        groupMatches
+          .filter((m) => m.groupNumber === g && m.status === "completed" && m.winnerParticipantId)
+          .forEach((m) => { wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1; });
+        const ranked = groupParticipants.sort((a, b) => (wins[b.id] || 0) - (wins[a.id] || 0));
+        ranked.slice(0, advancePerGroup).forEach((p, rankIdx) => {
+          if (!qualifiersByRank[rankIdx]) qualifiersByRank[rankIdx] = [];
+          qualifiersByRank[rankIdx].push(p.id);
+        });
+      }
+
+      // Urutan seeding bracket: semua juara grup dulu, baru semua runner-up, dst.
+      const seededIds = qualifiersByRank.flat();
+      if (seededIds.length < 2) {
+        throw Object.assign(new Error("Peserta yang lolos kurang dari 2, tidak bisa buat knockout"), { status: 400 });
+      }
+
+      await generateBracketMatches(tx, tournamentId, seededIds, "knockout");
+    });
+
+    res.json({ message: "Babak knockout berhasil dibuat dari hasil fase grup." });
+  } catch (e) {
+    const status = e.status || 500;
+    res.status(status).json({ error: { code: "START_KNOCKOUT_FAILED", message: e.message } });
+  }
+});
+
 // GET /api/tournaments - daftar semua turnamen (publik)
 router.get("/tournaments", async (req, res) => {
   try {
@@ -140,6 +228,22 @@ router.get("/tournaments", async (req, res) => {
     res.status(500).json({ error: { code: "LIST_TOURNAMENTS_FAILED", message: e.message } });
   }
 });
+
+function computeStandings(participants, matches) {
+  const wins = {};
+  const losses = {};
+  participants.forEach((p) => { wins[p.id] = 0; losses[p.id] = 0; });
+  matches.forEach((m) => {
+    if (m.status === "completed" && m.winnerParticipantId) {
+      wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1;
+      const loserId = m.participant1Id === m.winnerParticipantId ? m.participant2Id : m.participant1Id;
+      losses[loserId] = (losses[loserId] || 0) + 1;
+    }
+  });
+  return participants
+    .map((p) => ({ participantId: p.id, label: participantLabel(p), wins: wins[p.id] || 0, losses: losses[p.id] || 0 }))
+    .sort((a, b) => b.wins - a.wins);
+}
 
 // GET /api/tournaments/:id - detail turnamen
 router.get("/tournaments/:id", async (req, res) => {
@@ -166,38 +270,51 @@ router.get("/tournaments/:id", async (req, res) => {
       orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
     });
 
-    const matchesOut = matches.map((m) => ({
+    const toOut = (m) => ({
       id: m.id,
+      stage: m.stage,
+      groupNumber: m.groupNumber,
       round: m.round,
       matchIndex: m.matchIndex,
       participant1: m.participant1 ? { id: m.participant1.id, label: participantLabel(m.participant1) } : null,
       participant2: m.participant2 ? { id: m.participant2.id, label: participantLabel(m.participant2) } : null,
       winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: participantLabel(m.winnerParticipant) } : null,
       status: m.status,
-    }));
+    });
 
     let standings = null;
+    let groups = null;
+    let knockoutMatches = null;
+    let canStartKnockout = false;
+
     if (tournament.format === "round_robin") {
-      const wins = {};
-      const losses = {};
-      participants.forEach((p) => { wins[p.id] = 0; losses[p.id] = 0; });
-      matches.forEach((m) => {
-        if (m.status === "completed" && m.winnerParticipantId) {
-          wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1;
-          const loserId = m.participant1Id === m.winnerParticipantId ? m.participant2Id : m.participant1Id;
-          losses[loserId] = (losses[loserId] || 0) + 1;
-        }
-      });
-      standings = participants
-        .map((p) => ({ participantId: p.id, label: participantLabel(p), wins: wins[p.id] || 0, losses: losses[p.id] || 0 }))
-        .sort((a, b) => b.wins - a.wins);
+      standings = computeStandings(participants, matches);
+    } else if (tournament.format === "group_knockout") {
+      const numGroups = Math.max(0, ...participants.map((p) => p.groupNumber || 0));
+      groups = [];
+      for (let g = 1; g <= numGroups; g++) {
+        const groupParticipants = participants.filter((p) => p.groupNumber === g);
+        const groupMatchesRaw = matches.filter((m) => m.stage === "group" && m.groupNumber === g);
+        groups.push({
+          groupNumber: g,
+          standings: computeStandings(groupParticipants, groupMatchesRaw),
+          matches: groupMatchesRaw.map(toOut),
+        });
+      }
+      const knockoutRaw = matches.filter((m) => m.stage === "knockout");
+      knockoutMatches = knockoutRaw.length > 0 ? knockoutRaw.map(toOut) : null;
+      const pendingGroup = matches.filter((m) => m.stage === "group" && m.status === "pending").length;
+      canStartKnockout = pendingGroup === 0 && knockoutRaw.length === 0;
     }
 
     res.json({
       tournament,
-      participants: participants.map((p) => ({ id: p.id, label: participantLabel(p), seed: p.seed })),
-      matches: matchesOut,
+      participants: participants.map((p) => ({ id: p.id, label: participantLabel(p), seed: p.seed, groupNumber: p.groupNumber })),
+      matches: tournament.format === "bracket" ? matches.filter((m) => m.stage === "main").map(toOut) : matches.map(toOut),
       standings,
+      groups,
+      knockoutMatches,
+      canStartKnockout,
     });
   } catch (e) {
     console.error("Gagal ambil detail turnamen:", e);
@@ -206,8 +323,8 @@ router.get("/tournaments/:id", async (req, res) => {
 });
 
 // POST /api/admin/tournaments/:id/matches/:tmId/submit
-// Untuk Single: winnerId = playerId pemenang.
-// Untuk Ganda: winnerId = participantId (ID tim) pemenang (bukan playerId individu).
+// Untuk Single: winnerId = participantId pemenang.
+// Untuk Ganda: winnerId = participantId (ID tim) pemenang.
 router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireAdmin, async (req, res) => {
   const tournamentId = Number(req.params.id);
   const tmId = Number(req.params.tmId);
@@ -344,9 +461,12 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
         await tx.tournamentMatch.update({ where: { id: tmId }, data: { winnerParticipantId, doublesMatchId: dm.id, status: "completed" } });
       }
 
-      if (tournament.format === "bracket") {
+      // Auto-advance ke babak berikutnya, cuma untuk match yang bagian dari sistem gugur
+      // (format Bracket biasa, atau stage="knockout" di Setengah Kompetisi). Fase grup tidak ada auto-advance.
+      const isEliminationStage = tm.stage === "knockout" || (tm.stage === "main" && tournament.format === "bracket");
+      if (isEliminationStage) {
         const nextMatch = await tx.tournamentMatch.findFirst({
-          where: { tournamentId, round: tm.round + 1, matchIndex: Math.floor(tm.matchIndex / 2) },
+          where: { tournamentId, stage: tm.stage, round: tm.round + 1, matchIndex: Math.floor(tm.matchIndex / 2) },
         });
         if (nextMatch) {
           const slotField = tm.matchIndex % 2 === 0 ? "participant1Id" : "participant2Id";
@@ -357,7 +477,11 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
       const remaining = await tx.tournamentMatch.count({
         where: { tournamentId, status: "pending", participant1Id: { not: null }, participant2Id: { not: null } },
       });
-      if (remaining === 0) {
+      // Untuk group_knockout, jangan tandai selesai kalau knockout belum pernah dibuat sama sekali
+      // (supaya tidak "selesai" cuma karena fase grup kelar tapi belum sempat mulai knockout)
+      const t2 = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      const knockoutExists = t2.format !== "group_knockout" || (await tx.tournamentMatch.count({ where: { tournamentId, stage: "knockout" } })) > 0;
+      if (remaining === 0 && knockoutExists) {
         await tx.tournament.update({ where: { id: tournamentId }, data: { status: "completed", completedAt: new Date() } });
       }
 
