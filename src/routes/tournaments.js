@@ -342,7 +342,25 @@ router.get("/tournaments/:id", async (req, res) => {
       orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
     });
 
-    const toOut = (m) => ({
+    // Ambil skor asli dari Match/DoublesMatch yang terhubung, buat ditampilkan di tiap kotak match
+    const singleIds = matches.filter((m) => m.singleMatchId).map((m) => m.singleMatchId);
+    const doublesIds = matches.filter((m) => m.doublesMatchId).map((m) => m.doublesMatchId);
+    const [singleScores, doublesScores] = await Promise.all([
+      singleIds.length ? prisma.match.findMany({ where: { id: { in: singleIds } }, select: { id: true, targetGames: true, loserGames: true } }) : [],
+      doublesIds.length ? prisma.doublesMatch.findMany({ where: { id: { in: doublesIds } }, select: { id: true, loserGames: true } }) : [],
+    ]);
+    const singleScoreById = Object.fromEntries(singleScores.map((s) => [s.id, s]));
+    const doublesScoreById = Object.fromEntries(doublesScores.map((s) => [s.id, s]));
+
+    const toOut = (m) => {
+      let score = null;
+      if (m.singleMatchId && singleScoreById[m.singleMatchId]) {
+        const s = singleScoreById[m.singleMatchId];
+        score = `${s.targetGames}-${s.loserGames}`;
+      } else if (m.doublesMatchId && doublesScoreById[m.doublesMatchId]) {
+        score = `6-${doublesScoreById[m.doublesMatchId].loserGames}`;
+      }
+      return {
       id: m.id,
       stage: m.stage,
       groupNumber: m.groupNumber,
@@ -352,7 +370,9 @@ router.get("/tournaments/:id", async (req, res) => {
       participant2: m.participant2 ? { id: m.participant2.id, label: participantLabel(m.participant2) } : null,
       winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: participantLabel(m.winnerParticipant) } : null,
       status: m.status,
-    });
+      score,
+      };
+    };
 
     let standings = null;
     let groups = null;
