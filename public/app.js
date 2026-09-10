@@ -357,7 +357,7 @@ async function renderLeaderboard(container) {
     } else {
       list.innerHTML = "";
       ongoing.forEach((t) => {
-        const formatLabel = t.format === "bracket" ? "Bracket/Eliminasi" : "Round Robin";
+        const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi" }[t.format] || "Round Robin";
         const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
         const item = el(`
           <div class="row" style="cursor:pointer">
@@ -788,17 +788,19 @@ async function renderAdmin(container) {
       <select id="tourney-format">
         <option value="round_robin">Round Robin (semua lawan semua)</option>
         <option value="bracket">Bracket/Eliminasi</option>
+        <option value="group_knockout">Setengah Kompetisi (Fase Grup + Knockout)</option>
       </select>
-      <div id="tourney-singles-section">
-        <label>Pilih peserta (minimal 2)</label>
-        <div id="tourney-participants" style="max-height:200px;overflow-y:auto;border:1px solid #ddd;border-radius:8px;padding:0.5rem;margin-bottom:0.75rem">Memuat...</div>
+      <div id="tourney-groups-section" style="display:none">
+        <label>Jumlah grup</label>
+        <input id="tourney-num-groups" type="number" min="2" value="2" />
       </div>
-      <div id="tourney-doubles-section" style="display:none">
-        <label>Susun tim (minimal 2 tim, tiap tim 2 pemain berbeda)</label>
-        <div id="tourney-teams-list"></div>
-        <button id="tourney-add-team-btn" class="btn secondary" style="margin-top:0.5rem">+ Tambah Tim</button>
-      </div>
-      <div id="tourney-error" class="error" style="display:none"></div>
+      <label style="margin-top:0.5rem">Susun peserta (urutan = posisi/seed, bisa diatur naik-turun)</label>
+      <p class="muted" style="font-size:12px;margin-top:-0.5rem">Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.</p>
+      <div id="tourney-participant-rows"></div>
+      <select id="tourney-add-picker" style="margin-top:0.5rem"></select>
+      <select id="tourney-add-picker2" style="display:none;margin-top:0.5rem"></select>
+      <button id="tourney-add-participant-btn" class="btn secondary" style="margin-top:0.5rem">+ Tambah Peserta</button>
+      <div id="tourney-error" class="error" style="display:none;margin-top:0.75rem"></div>
       <button id="tourney-create-btn" class="btn">Buat Turnamen</button>
     </div>
   `);
@@ -808,50 +810,108 @@ async function renderAdmin(container) {
   try {
     const { players } = await api("/players");
     allPlayersForTourney = players;
-    const list = tournamentCreateWrap.querySelector("#tourney-participants");
-    list.innerHTML = players
-      .map((p) => `
-        <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-weight:normal">
-          <input type="checkbox" value="${p.id}" style="width:auto" /> ${p.name}
-        </label>`)
-      .join("");
   } catch (err) {
-    tournamentCreateWrap.querySelector("#tourney-participants").innerHTML = `<p class="error">${err.message}</p>`;
+    tournamentCreateWrap.querySelector("#tourney-error").textContent = err.message;
+    tournamentCreateWrap.querySelector("#tourney-error").style.display = "block";
   }
 
-  const playerOptionsHtml = `<option value="" selected disabled>-- Pilih pemain --</option>` +
-    allPlayersForTourney.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+  function playerOptionsHtml() {
+    return `<option value="" selected disabled>-- Pilih pemain --</option>` +
+      allPlayersForTourney.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+  }
+  tournamentCreateWrap.querySelector("#tourney-add-picker").innerHTML = playerOptionsHtml();
+  tournamentCreateWrap.querySelector("#tourney-add-picker2").innerHTML = playerOptionsHtml();
 
-  function addTeamRow() {
-    const teamsList = tournamentCreateWrap.querySelector("#tourney-teams-list");
-    const row = el(`
-      <div class="row team-row" style="gap:8px;align-items:center">
-        <select class="team-p1" style="flex:1">${playerOptionsHtml}</select>
-        <span>&amp;</span>
-        <select class="team-p2" style="flex:1">${playerOptionsHtml}</select>
-        <button type="button" class="btn danger remove-team-btn" style="margin-top:0;width:auto;padding:6px 10px">✕</button>
-      </div>
-    `);
-    row.querySelector(".remove-team-btn").addEventListener("click", () => row.remove());
-    teamsList.appendChild(row);
+  // participantEntries: array of { p1Id, p1Name, p2Id, p2Name } -- p2 null untuk Single
+  let participantEntries = [];
+
+  function renderParticipantRows() {
+    const rowsWrap = tournamentCreateWrap.querySelector("#tourney-participant-rows");
+    rowsWrap.innerHTML = "";
+    participantEntries.forEach((entry, idx) => {
+      const label = entry.p2Name ? `${entry.p1Name}/${entry.p2Name}` : entry.p1Name;
+      const row = el(`
+        <div class="row" style="gap:8px;align-items:center;padding:6px 0">
+          <span style="width:22px;color:#999;font-size:12px">#${idx + 1}</span>
+          <span style="flex:1">${label}</span>
+          <button type="button" class="btn secondary move-up-btn" style="margin-top:0;width:auto;padding:4px 8px" ${idx === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" class="btn secondary move-down-btn" style="margin-top:0;width:auto;padding:4px 8px" ${idx === participantEntries.length - 1 ? "disabled" : ""}>↓</button>
+          <button type="button" class="btn danger remove-btn" style="margin-top:0;width:auto;padding:4px 8px">✕</button>
+        </div>
+      `);
+      row.querySelector(".move-up-btn").addEventListener("click", () => {
+        if (idx === 0) return;
+        [participantEntries[idx - 1], participantEntries[idx]] = [participantEntries[idx], participantEntries[idx - 1]];
+        renderParticipantRows();
+      });
+      row.querySelector(".move-down-btn").addEventListener("click", () => {
+        if (idx === participantEntries.length - 1) return;
+        [participantEntries[idx + 1], participantEntries[idx]] = [participantEntries[idx], participantEntries[idx + 1]];
+        renderParticipantRows();
+      });
+      row.querySelector(".remove-btn").addEventListener("click", () => {
+        participantEntries.splice(idx, 1);
+        renderParticipantRows();
+      });
+      rowsWrap.appendChild(row);
+    });
   }
 
   function toggleTourneyTypeSection() {
     const type = tournamentCreateWrap.querySelector("#tourney-type").value;
-    tournamentCreateWrap.querySelector("#tourney-singles-section").style.display = type === "singles" ? "block" : "none";
-    tournamentCreateWrap.querySelector("#tourney-doubles-section").style.display = type === "doubles" ? "block" : "none";
-    if (type === "doubles" && tournamentCreateWrap.querySelectorAll(".team-row").length === 0) {
-      addTeamRow();
-      addTeamRow();
-    }
+    tournamentCreateWrap.querySelector("#tourney-add-picker2").style.display = type === "doubles" ? "inline-block" : "none";
   }
   tournamentCreateWrap.querySelector("#tourney-type").addEventListener("change", toggleTourneyTypeSection);
-  tournamentCreateWrap.querySelector("#tourney-add-team-btn").addEventListener("click", addTeamRow);
+
+  tournamentCreateWrap.querySelector("#tourney-format").addEventListener("change", (e) => {
+    tournamentCreateWrap.querySelector("#tourney-groups-section").style.display = e.target.value === "group_knockout" ? "block" : "none";
+  });
+
+  tournamentCreateWrap.querySelector("#tourney-add-participant-btn").addEventListener("click", () => {
+    const type = tournamentCreateWrap.querySelector("#tourney-type").value;
+    const errorEl = tournamentCreateWrap.querySelector("#tourney-error");
+    errorEl.style.display = "none";
+    const picker1 = tournamentCreateWrap.querySelector("#tourney-add-picker");
+    const p1Id = Number(picker1.value);
+    if (!p1Id) {
+      errorEl.textContent = "Pilih pemain dulu";
+      errorEl.style.display = "block";
+      return;
+    }
+    let p2Id = null;
+    if (type === "doubles") {
+      const picker2 = tournamentCreateWrap.querySelector("#tourney-add-picker2");
+      p2Id = Number(picker2.value);
+      if (!p2Id) {
+        errorEl.textContent = "Pilih 2 pemain untuk 1 tim";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (p1Id === p2Id) {
+        errorEl.textContent = "Partner tidak boleh orang yang sama";
+        errorEl.style.display = "block";
+        return;
+      }
+    }
+    const usedIds = participantEntries.flatMap((e) => [e.p1Id, e.p2Id].filter(Boolean));
+    if (usedIds.includes(p1Id) || (p2Id && usedIds.includes(p2Id))) {
+      errorEl.textContent = "Pemain ini sudah dipakai di peserta/tim lain";
+      errorEl.style.display = "block";
+      return;
+    }
+    const p1Name = allPlayersForTourney.find((p) => p.id === p1Id)?.name || "?";
+    const p2Name = p2Id ? (allPlayersForTourney.find((p) => p.id === p2Id)?.name || "?") : null;
+    participantEntries.push({ p1Id, p1Name, p2Id, p2Name });
+    renderParticipantRows();
+    picker1.value = "";
+    if (type === "doubles") tournamentCreateWrap.querySelector("#tourney-add-picker2").value = "";
+  });
 
   tournamentCreateWrap.querySelector("#tourney-create-btn").addEventListener("click", async () => {
     const name = tournamentCreateWrap.querySelector("#tourney-name").value.trim();
     const type = tournamentCreateWrap.querySelector("#tourney-type").value;
     const format = tournamentCreateWrap.querySelector("#tourney-format").value;
+    const numGroups = Number(tournamentCreateWrap.querySelector("#tourney-num-groups").value);
     const errorEl = tournamentCreateWrap.querySelector("#tourney-error");
     errorEl.style.display = "none";
 
@@ -860,44 +920,30 @@ async function renderAdmin(container) {
       errorEl.style.display = "block";
       return;
     }
-
-    let participantIds;
-    if (type === "singles") {
-      participantIds = [...tournamentCreateWrap.querySelectorAll("#tourney-participants input:checked")].map((c) => Number(c.value));
-      if (participantIds.length < 2) {
-        errorEl.textContent = "Pilih minimal 2 peserta";
-        errorEl.style.display = "block";
-        return;
-      }
-    } else {
-      const rows = [...tournamentCreateWrap.querySelectorAll(".team-row")];
-      participantIds = rows.map((row) => [
-        Number(row.querySelector(".team-p1").value),
-        Number(row.querySelector(".team-p2").value),
-      ]);
-      if (participantIds.length < 2) {
-        errorEl.textContent = "Susun minimal 2 tim";
-        errorEl.style.display = "block";
-        return;
-      }
-      const invalidTeam = participantIds.find(([p1, p2]) => !p1 || !p2 || p1 === p2);
-      if (invalidTeam) {
-        errorEl.textContent = "Setiap tim harus punya 2 pemain berbeda yang sudah dipilih";
-        errorEl.style.display = "block";
-        return;
-      }
-      const allIds = participantIds.flat();
-      if (new Set(allIds).size !== allIds.length) {
-        errorEl.textContent = "Ada pemain yang dipakai di lebih dari 1 tim";
-        errorEl.style.display = "block";
-        return;
-      }
+    if (participantEntries.length < 2) {
+      errorEl.textContent = "Tambahkan minimal 2 peserta";
+      errorEl.style.display = "block";
+      return;
     }
+    if (format === "group_knockout" && (!numGroups || numGroups < 2)) {
+      errorEl.textContent = "Jumlah grup minimal 2";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (format === "group_knockout" && participantEntries.length < numGroups * 2) {
+      errorEl.textContent = `Minimal 2 peserta per grup (butuh minimal ${numGroups * 2} peserta untuk ${numGroups} grup)`;
+      errorEl.style.display = "block";
+      return;
+    }
+
+    const participantIds = type === "doubles"
+      ? participantEntries.map((e) => [e.p1Id, e.p2Id])
+      : participantEntries.map((e) => e.p1Id);
 
     try {
       const data = await api("/admin/tournaments", {
         method: "POST",
-        body: JSON.stringify({ name, format, type, participantIds }),
+        body: JSON.stringify({ name, format, type, participantIds, numGroups: format === "group_knockout" ? numGroups : undefined }),
       });
       alert(data.message);
       state.selectedTournamentId = data.tournamentId;
@@ -1079,7 +1125,7 @@ async function renderTournaments(container) {
     }
     list.innerHTML = "";
     filtered.forEach((t) => {
-      const formatLabel = t.format === "bracket" ? "Bracket/Eliminasi" : "Round Robin";
+      const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi" }[t.format] || "Round Robin";
       const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
       const statusBadge = t.status === "completed"
         ? `<span style="font-size:11px;background:#e0e0e0;color:#555;padding:2px 8px;border-radius:6px">Selesai</span>`
@@ -1109,6 +1155,85 @@ async function renderTournaments(container) {
   wrap.querySelector("#tourney-status-filter").addEventListener("change", (e) => renderList(e.target.value));
 }
 
+// Bangun HTML diagram bracket visual (kolom per babak, gap membesar 2x tiap babak
+// biar kelihatan efek "corong" khas bagan turnamen, bisa di-scroll ke samping di HP)
+function buildBracketDiagramHtml(matches, isAdmin) {
+  const numRounds = matches.length ? Math.max(...matches.map((m) => m.round)) : 0;
+  let html = `<div style="overflow-x:auto"><div style="display:flex;gap:28px;padding:1rem 0.25rem;min-width:max-content">`;
+  for (let r = 1; r <= numRounds; r++) {
+    const gap = 14 * Math.pow(2, r - 1);
+    const roundLabel = r === numRounds ? "Final" : (r === numRounds - 1 ? "Semifinal" : `Babak ${r}`);
+    html += `<div style="display:flex;flex-direction:column;justify-content:space-around;gap:${gap}px;min-width:150px">`;
+    html += `<div style="text-align:center;font-size:11px;font-weight:600;color:#777;margin-bottom:4px">${roundLabel}</div>`;
+    matches.filter((m) => m.round === r).sort((a, b) => a.matchIndex - b.matchIndex).forEach((m) => {
+      const p1 = m.participant1 ? m.participant1.label : "?";
+      const p2 = m.participant2 ? m.participant2.label : "-";
+      const p1Won = m.winner && m.participant1 && m.winner.id === m.participant1.id;
+      const p2Won = m.winner && m.participant2 && m.winner.id === m.participant2.id;
+      html += `<div style="border:1px solid #ddd;border-radius:8px;overflow:hidden;font-size:12px">
+        <div style="padding:6px 8px;border-bottom:1px solid #eee;${p1Won ? "font-weight:700;background:#f4f4f2" : ""}">${p1}</div>
+        <div style="padding:6px 8px;${p2Won ? "font-weight:700;background:#f4f4f2" : ""}">${p2}</div>
+      </div>`;
+      if (isAdmin && m.status === "pending" && m.participant1 && m.participant2) {
+        html += `<button class="btn secondary" style="margin-top:2px;font-size:11px;padding:4px" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>`;
+      }
+    });
+    html += `</div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+// Daftar match datar (buat Round Robin & fase grup) -- tanpa diagram, cuma list biasa
+function buildMatchListHtml(matches, isAdmin) {
+  let html = "";
+  matches.forEach((m) => {
+    const p1 = m.participant1 ? m.participant1.label : "?";
+    const p2 = m.participant2 ? m.participant2.label : "(menunggu)";
+    let resultText = m.status === "completed" || m.status === "bye"
+      ? `<strong>${m.winner ? m.winner.label : "-"}</strong> menang`
+      : `<span class="muted">Belum main</span>`;
+    html += `<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div style="display:flex;justify-content:space-between">
+        <span>${p1} vs ${p2}</span><span>${resultText}</span>
+      </div>
+      ${isAdmin && m.status === "pending" && m.participant1 && m.participant2 ? `<button class="btn secondary" style="margin-top:0" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>` : ""}
+    </div>`;
+  });
+  return html;
+}
+
+function wireSubmitButtons(detail, tId, render) {
+  detail.querySelectorAll("[data-submit-tm]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tmId = btn.dataset.submitTm;
+      const p1Id = Number(btn.dataset.p1);
+      const p2Id = Number(btn.dataset.p2);
+      const p1Name = btn.dataset.p1name;
+      const p2Name = btn.dataset.p2name;
+      const winnerChoice = prompt(`Siapa yang menang?\n1 = ${p1Name}\n2 = ${p2Name}`);
+      if (winnerChoice !== "1" && winnerChoice !== "2") return;
+      const loserGamesStr = prompt("Game yang didapat pihak kalah (0-5)?");
+      const loserGames = Number(loserGamesStr);
+      if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > 5) {
+        alert("Skor tidak valid");
+        return;
+      }
+      const winnerId = winnerChoice === "1" ? p1Id : p2Id;
+      try {
+        const data = await api(`/admin/tournaments/${tId}/matches/${tmId}/submit`, {
+          method: "POST",
+          body: JSON.stringify({ winnerId, loserGames, targetGames: 6 }),
+        });
+        alert(data.message);
+        render();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
 async function renderTournamentDetail(container) {
   container.appendChild(nav("tournaments"));
   const backBtn = el(`<button class="btn secondary" style="margin-bottom:0.5rem">&larr; Kembali ke daftar turnamen</button>`);
@@ -1125,47 +1250,58 @@ async function renderTournamentDetail(container) {
   }
 
   try {
-    const { tournament, matches, standings } = await api(`/tournaments/${tId}`);
+    const { tournament, matches, standings, groups, knockoutMatches, canStartKnockout } = await api(`/tournaments/${tId}`);
     const isAdmin = state.player && state.player.isAdmin;
     const detail = wrap.querySelector("#tournament-detail");
 
+    const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)" }[tournament.format];
     let html = `<h2>🏆 ${tournament.name}</h2>`;
-    html += `<p class="muted" style="font-size:13px">${tournament.format === "bracket" ? "Bracket/Eliminasi" : "Round Robin"} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
+    html += `<p class="muted" style="font-size:13px">${formatLabel} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
 
-    if (standings) {
+    if (tournament.format === "round_robin") {
       html += `<h3 style="margin-top:1rem;font-size:15px">Klasemen</h3>`;
       html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th></tr></thead><tbody>`;
-      standings.forEach((s) => {
-        html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td></tr>`;
-      });
+      standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td></tr>`; });
       html += `</tbody></table>`;
+      html += `<h3 style="margin-top:1rem;font-size:15px">Pertandingan</h3>`;
+      html += buildMatchListHtml(matches, isAdmin);
+    } else if (tournament.format === "bracket") {
+      html += `<h3 style="margin-top:1rem;font-size:15px">Bagan Turnamen</h3>`;
+      html += buildBracketDiagramHtml(matches, isAdmin);
+    } else if (tournament.format === "group_knockout") {
+      groups.forEach((g) => {
+        html += `<h3 style="margin-top:1.25rem;font-size:15px">Grup ${g.groupNumber}</h3>`;
+        html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th></tr></thead><tbody>`;
+        g.standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td></tr>`; });
+        html += `</tbody></table>`;
+        html += buildMatchListHtml(g.matches, isAdmin);
+      });
+      if (knockoutMatches) {
+        html += `<h3 style="margin-top:1.25rem;font-size:15px">🏆 Babak Knockout</h3>`;
+        html += buildBracketDiagramHtml(knockoutMatches, isAdmin);
+      }
     }
 
-    const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
-    rounds.forEach((r) => {
-      const label = tournament.format === "bracket"
-        ? (rounds.length === r ? "Final" : `Babak ${r}`)
-        : "Pertandingan";
-      html += `<h3 style="margin-top:1rem;font-size:15px">${label}</h3>`;
-      matches.filter((m) => m.round === r).forEach((m) => {
-        const p1 = m.participant1 ? m.participant1.label : "?";
-        const p2 = m.participant2 ? m.participant2.label : "(menunggu)";
-        let resultText = "";
-        if (m.status === "completed" || m.status === "bye") {
-          resultText = `<strong>${m.winner ? m.winner.label : "-"}</strong> menang`;
-        } else {
-          resultText = `<span class="muted">Belum main</span>`;
-        }
-        html += `<div class="row" style="flex-direction:column;align-items:stretch;gap:4px" data-tm-id="${m.id}">
-          <div style="display:flex;justify-content:space-between">
-            <span>${p1} vs ${p2}</span><span>${resultText}</span>
-          </div>
-          ${isAdmin && m.status === "pending" && m.participant1 && m.participant2 ? `<button class="btn secondary" style="margin-top:0" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>` : ""}
-        </div>`;
-      });
-    });
-
     detail.innerHTML = html;
+    wireSubmitButtons(detail, tId, render);
+
+    if (isAdmin && tournament.format === "group_knockout" && canStartKnockout) {
+      const startKoBtn = el(`<button class="btn" style="margin-top:1rem">Mulai Babak Knockout (Top 2 tiap grup)</button>`);
+      startKoBtn.addEventListener("click", async () => {
+        if (!confirm("Semua match fase grup sudah selesai. Mulai babak knockout dengan 2 peserta teratas tiap grup?")) return;
+        try {
+          const data = await api(`/admin/tournaments/${tId}/start-knockout`, {
+            method: "POST",
+            body: JSON.stringify({ advancePerGroup: 2 }),
+          });
+          alert(data.message);
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+      detail.appendChild(startKoBtn);
+    }
 
     if (isAdmin) {
       const deleteBtn = el(`<button class="btn danger" style="margin-top:1rem">Hapus Turnamen Ini</button>`);
@@ -1181,37 +1317,6 @@ async function renderTournamentDetail(container) {
         }
       });
       detail.appendChild(deleteBtn);
-    }
-
-    if (isAdmin) {
-      detail.querySelectorAll("[data-submit-tm]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const tmId = btn.dataset.submitTm;
-          const p1Id = Number(btn.dataset.p1);
-          const p2Id = Number(btn.dataset.p2);
-          const p1Name = btn.dataset.p1name;
-          const p2Name = btn.dataset.p2name;
-          const winnerChoice = prompt(`Siapa yang menang?\n1 = ${p1Name}\n2 = ${p2Name}`);
-          if (winnerChoice !== "1" && winnerChoice !== "2") return;
-          const loserGamesStr = prompt("Game yang didapat pihak kalah (0-5)?");
-          const loserGames = Number(loserGamesStr);
-          if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > 5) {
-            alert("Skor tidak valid");
-            return;
-          }
-          const winnerId = winnerChoice === "1" ? p1Id : p2Id;
-          try {
-            const data = await api(`/admin/tournaments/${tId}/matches/${tmId}/submit`, {
-              method: "POST",
-              body: JSON.stringify({ winnerId, loserGames, targetGames: 6 }),
-            });
-            alert(data.message);
-            render();
-          } catch (err) {
-            alert(err.message);
-          }
-        });
-      });
     }
   } catch (err) {
     wrap.querySelector("#tournament-detail").innerHTML = `<p class="error">${err.message}</p>`;
