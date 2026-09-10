@@ -356,4 +356,25 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
   }
 });
 
+// DELETE /api/admin/tournaments/:id - hapus turnamen (struktur turnamennya saja).
+// TIDAK menghapus/reverse Match atau DoublesMatch yang sudah terjadi dari turnamen ini --
+// hasil pertandingan & rating yang sudah berubah tetap ada di histori pemain.
+router.delete("/admin/tournaments/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.$transaction(async (tx) => {
+      const tournament = await tx.tournament.findUnique({ where: { id } });
+      if (!tournament) throw Object.assign(new Error("Turnamen tidak ditemukan"), { status: 404 });
+
+      await tx.tournamentMatch.deleteMany({ where: { tournamentId: id } });
+      await tx.tournamentParticipant.deleteMany({ where: { tournamentId: id } });
+      await tx.tournament.delete({ where: { id } });
+    });
+    res.json({ message: "Turnamen berhasil dihapus. Hasil match & rating yang sudah terjadi tetap tersimpan." });
+  } catch (e) {
+    const status = e.status || 500;
+    res.status(status).json({ error: { code: "DELETE_TOURNAMENT_FAILED", message: e.message } });
+  }
+});
+
 module.exports = router;
