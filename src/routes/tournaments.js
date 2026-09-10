@@ -534,20 +534,41 @@ router.get("/tournaments/:id", async (req, res) => {
       }));
 
       // Hitung poin individu: menang = +selisih game, kalah = +0. Berlaku utk kedua anggota tim.
+      // Tie-breaker kalau poin sama: 1) total menang, 2) total game yang dimenangkan (bukan head-to-head,
+      // karena partner acak tiap ronde jadi 2 orang bisa saja tidak pernah lawan-lawanan langsung).
       const points = {};
+      const winsCount = {};
+      const gamesWon = {};
       const labelByParticipant = {};
-      participants.forEach((p) => { points[p.id] = 0; labelByParticipant[p.id] = participantLabel(p); });
+      participants.forEach((p) => {
+        points[p.id] = 0; winsCount[p.id] = 0; gamesWon[p.id] = 0;
+        labelByParticipant[p.id] = participantLabel(p);
+      });
 
       matches.filter((m) => m.status === "completed" && m.doublesMatchId && doublesScoreById[m.doublesMatchId]).forEach((m) => {
-        const margin = 6 - doublesScoreById[m.doublesMatchId].loserGames;
+        const loserGames = doublesScoreById[m.doublesMatchId].loserGames;
+        const margin = 6 - loserGames;
         const winIsTeam1 = m.winnerParticipantId === m.participant1Id;
         const winnerIds = winIsTeam1 ? [m.participant1Id, m.participant1bId] : [m.participant2Id, m.participant2bId];
-        winnerIds.forEach((pid) => { if (pid != null) points[pid] = (points[pid] || 0) + margin; });
+        const loserIds = winIsTeam1 ? [m.participant2Id, m.participant2bId] : [m.participant1Id, m.participant1bId];
+        winnerIds.forEach((pid) => {
+          if (pid == null) return;
+          points[pid] = (points[pid] || 0) + margin;
+          winsCount[pid] = (winsCount[pid] || 0) + 1;
+          gamesWon[pid] = (gamesWon[pid] || 0) + 6;
+        });
+        loserIds.forEach((pid) => {
+          if (pid == null) return;
+          gamesWon[pid] = (gamesWon[pid] || 0) + loserGames;
+        });
       });
 
       cappuccinoRanking = participants
-        .map((p) => ({ participantId: p.id, label: labelByParticipant[p.id], points: points[p.id] || 0 }))
-        .sort((a, b) => b.points - a.points);
+        .map((p) => ({
+          participantId: p.id, label: labelByParticipant[p.id],
+          points: points[p.id] || 0, wins: winsCount[p.id] || 0, gamesWon: gamesWon[p.id] || 0,
+        }))
+        .sort((a, b) => b.points - a.points || b.wins - a.wins || b.gamesWon - a.gamesWon);
     }
 
     res.json({
