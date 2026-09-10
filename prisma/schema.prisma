@@ -284,6 +284,8 @@ model TournamentParticipant {
 
   matchesAsParticipant1 TournamentMatch[] @relation("TMParticipant1")
   matchesAsParticipant2 TournamentMatch[] @relation("TMParticipant2")
+  matchesAsParticipant1b TournamentMatch[] @relation("TMParticipant1b")
+  matchesAsParticipant2b TournamentMatch[] @relation("TMParticipant2b")
   matchesWon            TournamentMatch[] @relation("TMWinnerParticipant")
 
   @@map("tournament_participants")
@@ -298,6 +300,8 @@ model TournamentMatch {
   matchIndex          Int      @map("match_index")
   participant1Id      Int?     @map("participant1_id")
   participant2Id      Int?     @map("participant2_id")
+  participant1bId     Int?     @map("participant1b_id") // partner sisi 1, cuma dipakai format Americano
+  participant2bId     Int?     @map("participant2b_id") // partner sisi 2, cuma dipakai format Americano
   winnerParticipantId Int?     @map("winner_participant_id")
   singleMatchId        Int?    @unique @map("single_match_id")
   doublesMatchId       Int?    @unique @map("doubles_match_id")
@@ -307,6 +311,8 @@ model TournamentMatch {
   tournament        Tournament             @relation(fields: [tournamentId], references: [id])
   participant1      TournamentParticipant? @relation("TMParticipant1", fields: [participant1Id], references: [id])
   participant2      TournamentParticipant? @relation("TMParticipant2", fields: [participant2Id], references: [id])
+  participant1b     TournamentParticipant? @relation("TMParticipant1b", fields: [participant1bId], references: [id])
+  participant2b     TournamentParticipant? @relation("TMParticipant2b", fields: [participant2bId], references: [id])
   winnerParticipant TournamentParticipant? @relation("TMWinnerParticipant", fields: [winnerParticipantId], references: [id])
   singleMatch       Match?                 @relation("TournamentSingleMatch", fields: [singleMatchId], references: [id])
   doublesMatch      DoublesMatch?          @relation("TournamentDoublesMatch", fields: [doublesMatchId], references: [id])
