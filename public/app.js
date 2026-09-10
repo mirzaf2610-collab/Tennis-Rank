@@ -1173,6 +1173,7 @@ function buildBracketDiagramHtml(matches, isAdmin) {
       html += `<div style="border:1px solid #ddd;border-radius:8px;overflow:hidden;font-size:12px">
         <div style="padding:6px 8px;border-bottom:1px solid #eee;${p1Won ? "font-weight:700;background:#f4f4f2" : ""}">${p1}</div>
         <div style="padding:6px 8px;${p2Won ? "font-weight:700;background:#f4f4f2" : ""}">${p2}</div>
+        ${m.score ? `<div style="padding:3px 8px;font-size:11px;color:#777;text-align:center;background:#fafafa;border-top:1px solid #eee">${m.score}</div>` : ""}
       </div>`;
       if (isAdmin && m.status === "pending" && m.participant1 && m.participant2) {
         html += `<button class="btn secondary" style="margin-top:2px;font-size:11px;padding:4px" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>`;
@@ -1191,7 +1192,7 @@ function buildMatchListHtml(matches, isAdmin) {
     const p1 = m.participant1 ? m.participant1.label : "?";
     const p2 = m.participant2 ? m.participant2.label : "(menunggu)";
     let resultText = m.status === "completed" || m.status === "bye"
-      ? `<strong>${m.winner ? m.winner.label : "-"}</strong> menang`
+      ? `<strong>${m.winner ? m.winner.label : "-"}</strong> menang${m.score ? ` (${m.score})` : ""}`
       : `<span class="muted">Belum main</span>`;
     html += `<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
       <div style="display:flex;justify-content:space-between">
