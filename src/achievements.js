@@ -18,7 +18,7 @@ function getStreakBadge(streak) {
   if (streak >= 10) return { emoji: "🐐", label: "GOAT" };
   if (streak >= 5) return { emoji: "🔥🔥", label: "Super Unbeaten" };
   if (streak >= 3) return { emoji: "✅", label: "Unbeaten" };
-  if (streak <= -3) return { emoji: "😅", label: "Looser" };
+  if (streak <= -3) return { emoji: "😅", label: "Loser" };
   return null;
 }
 
