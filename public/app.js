@@ -1051,38 +1051,62 @@ async function renderAdmin(container) {
 
 async function renderTournaments(container) {
   container.appendChild(nav("tournaments"));
-  const wrap = el(`<div class="card"><h2>🏆 Turnamen</h2><div id="tournament-list">Memuat...</div></div>`);
+  const wrap = el(`
+    <div class="card">
+      <h2>🏆 Turnamen</h2>
+      <label style="font-size:12px">Filter</label>
+      <select id="tourney-status-filter">
+        <option value="all">Semua Turnamen</option>
+        <option value="ongoing">Sedang Berlangsung</option>
+        <option value="completed">Selesai (Arsip)</option>
+      </select>
+      <div id="tournament-list">Memuat...</div>
+    </div>
+  `);
   container.appendChild(wrap);
+
+  let allTournaments = [];
+
+  function renderList(filter) {
+    const list = wrap.querySelector("#tournament-list");
+    const filtered = filter === "all"
+      ? allTournaments
+      : allTournaments.filter((t) => (filter === "completed" ? t.status === "completed" : t.status !== "completed"));
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<p class="muted">Tidak ada turnamen di kategori ini.</p>`;
+      return;
+    }
+    list.innerHTML = "";
+    filtered.forEach((t) => {
+      const formatLabel = t.format === "bracket" ? "Bracket/Eliminasi" : "Round Robin";
+      const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
+      const statusBadge = t.status === "completed"
+        ? `<span style="font-size:11px;background:#e0e0e0;color:#555;padding:2px 8px;border-radius:6px">Selesai</span>`
+        : `<span style="font-size:11px;background:#c8e6c9;color:#1b5e20;padding:2px 8px;border-radius:6px">Berlangsung</span>`;
+      const item = el(`
+        <div class="row" style="cursor:pointer">
+          <span><strong>${t.name}</strong><br/><span class="muted" style="font-size:12px">${typeLabel} &middot; ${formatLabel}</span></span>
+          <span>${statusBadge}</span>
+        </div>
+      `);
+      item.addEventListener("click", () => {
+        state.selectedTournamentId = t.id;
+        state.page = "tournamentDetail";
+        render();
+      });
+      list.appendChild(item);
+    });
+  }
 
   try {
     const { tournaments } = await api("/tournaments");
-    const list = wrap.querySelector("#tournament-list");
-    if (tournaments.length === 0) {
-      list.innerHTML = `<p class="muted">Belum ada turnamen.</p>`;
-    } else {
-      list.innerHTML = "";
-      tournaments.forEach((t) => {
-        const formatLabel = t.format === "bracket" ? "Bracket/Eliminasi" : "Round Robin";
-        const statusBadge = t.status === "completed"
-          ? `<span style="font-size:11px;background:#e0e0e0;color:#555;padding:2px 8px;border-radius:6px">Selesai</span>`
-          : `<span style="font-size:11px;background:#c8e6c9;color:#1b5e20;padding:2px 8px;border-radius:6px">Berlangsung</span>`;
-        const item = el(`
-          <div class="row" style="cursor:pointer">
-            <span><strong>${t.name}</strong><br/><span class="muted" style="font-size:12px">${formatLabel}</span></span>
-            <span>${statusBadge}</span>
-          </div>
-        `);
-        item.addEventListener("click", () => {
-          state.selectedTournamentId = t.id;
-          state.page = "tournamentDetail";
-          render();
-        });
-        list.appendChild(item);
-      });
-    }
+    allTournaments = tournaments;
+    renderList("all");
   } catch (err) {
     wrap.querySelector("#tournament-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
+  wrap.querySelector("#tourney-status-filter").addEventListener("change", (e) => renderList(e.target.value));
 }
 
 async function renderTournamentDetail(container) {
@@ -1142,6 +1166,22 @@ async function renderTournamentDetail(container) {
     });
 
     detail.innerHTML = html;
+
+    if (isAdmin) {
+      const deleteBtn = el(`<button class="btn danger" style="margin-top:1rem">Hapus Turnamen Ini</button>`);
+      deleteBtn.addEventListener("click", async () => {
+        if (!confirm(`Yakin hapus turnamen "${tournament.name}"?\n\nHasil match & rating yang sudah terjadi TETAP TERSIMPAN, cuma struktur turnamennya yang dihapus. Tindakan ini tidak bisa dibatalkan.`)) return;
+        try {
+          const data = await api(`/admin/tournaments/${tId}`, { method: "DELETE" });
+          alert(data.message);
+          state.page = "tournaments";
+          render();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+      detail.appendChild(deleteBtn);
+    }
 
     if (isAdmin) {
       detail.querySelectorAll("[data-submit-tm]").forEach((btn) => {
