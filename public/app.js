@@ -357,7 +357,7 @@ async function renderLeaderboard(container) {
     } else {
       list.innerHTML = "";
       ongoing.forEach((t) => {
-        const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi" }[t.format] || "Round Robin";
+        const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi", cappuccino: "Sistem Cappuccino" }[t.format] || "Round Robin";
         const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
         const item = el(`
           <div class="row" style="cursor:pointer">
@@ -779,24 +779,36 @@ async function renderAdmin(container) {
       <h2>Buat Turnamen</h2>
       <label>Nama turnamen</label>
       <input id="tourney-name" type="text" placeholder="misal: Turnamen Agustusan 2026" />
-      <label>Tipe</label>
-      <select id="tourney-type">
-        <option value="singles">Single</option>
-        <option value="doubles">Ganda</option>
-      </select>
+      <div id="tourney-type-section">
+        <label>Tipe</label>
+        <select id="tourney-type">
+          <option value="singles">Single</option>
+          <option value="doubles">Ganda</option>
+        </select>
+      </div>
       <label>Format</label>
       <select id="tourney-format">
         <option value="round_robin">Round Robin (semua lawan semua)</option>
         <option value="bracket">Bracket/Eliminasi</option>
         <option value="group_knockout">Setengah Kompetisi (Fase Grup + Knockout)</option>
+        <option value="cappuccino">Sistem Cappuccino (partner ganti-ganti tiap ronde)</option>
       </select>
       <div id="tourney-groups-section" style="display:none">
         <label>Jumlah grup</label>
         <input id="tourney-num-groups" type="number" min="2" value="2" />
       </div>
+      <div id="tourney-courts-section" style="display:none">
+        <label>Jumlah lapangan tersedia</label>
+        <select id="tourney-num-courts">
+          <option value="1">1 Lapangan</option>
+          <option value="2" selected>2 Lapangan</option>
+        </select>
+        <p class="muted" style="font-size:12px;margin-top:-0.5rem">Tidak perlu main bersamaan real-time — ini cuma menentukan berapa match per ronde. Jumlah ronde &amp; rotasi partner dihitung otomatis sistem supaya semua orang main jumlah yang sama rata.</p>
+      </div>
       <label style="margin-top:0.5rem">Susun peserta (urutan = posisi/seed, bisa diatur naik-turun)</label>
-      <p class="muted" style="font-size:12px;margin-top:-0.5rem">Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.</p>
+      <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-participant-hint">Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.</p>
       <div id="tourney-participant-rows"></div>
+      <button id="tourney-shuffle-btn" class="btn secondary" style="display:none;margin-top:0.5rem">🔀 Acak Urutan</button>
       <select id="tourney-add-picker" style="margin-top:0.5rem"></select>
       <select id="tourney-add-picker2" style="display:none;margin-top:0.5rem"></select>
       <button id="tourney-add-participant-btn" class="btn secondary" style="margin-top:0.5rem">+ Tambah Peserta</button>
@@ -822,7 +834,7 @@ async function renderAdmin(container) {
   tournamentCreateWrap.querySelector("#tourney-add-picker").innerHTML = playerOptionsHtml();
   tournamentCreateWrap.querySelector("#tourney-add-picker2").innerHTML = playerOptionsHtml();
 
-  // participantEntries: array of { p1Id, p1Name, p2Id, p2Name } -- p2 null untuk Single
+  // participantEntries: array of { p1Id, p1Name, p2Id, p2Name } -- p2 null untuk Single/Cappuccino
   let participantEntries = [];
 
   function renderParticipantRows() {
@@ -857,14 +869,34 @@ async function renderAdmin(container) {
     });
   }
 
+  function isCappuccino() {
+    return tournamentCreateWrap.querySelector("#tourney-format").value === "cappuccino";
+  }
+
   function toggleTourneyTypeSection() {
+    const cappuccino = isCappuccino();
     const type = tournamentCreateWrap.querySelector("#tourney-type").value;
-    tournamentCreateWrap.querySelector("#tourney-add-picker2").style.display = type === "doubles" ? "inline-block" : "none";
+    tournamentCreateWrap.querySelector("#tourney-type-section").style.display = cappuccino ? "none" : "block";
+    tournamentCreateWrap.querySelector("#tourney-add-picker2").style.display = (!cappuccino && type === "doubles") ? "inline-block" : "none";
+    tournamentCreateWrap.querySelector("#tourney-shuffle-btn").style.display = cappuccino ? "inline-block" : "none";
   }
   tournamentCreateWrap.querySelector("#tourney-type").addEventListener("change", toggleTourneyTypeSection);
 
   tournamentCreateWrap.querySelector("#tourney-format").addEventListener("change", (e) => {
     tournamentCreateWrap.querySelector("#tourney-groups-section").style.display = e.target.value === "group_knockout" ? "block" : "none";
+    tournamentCreateWrap.querySelector("#tourney-courts-section").style.display = e.target.value === "cappuccino" ? "block" : "none";
+    tournamentCreateWrap.querySelector("#tourney-participant-hint").textContent = e.target.value === "cappuccino"
+      ? "Untuk Sistem Cappuccino, ini cuma daftar peserta -- partner akan diacak otomatis tiap ronde, urutan tidak terlalu penting (bisa dipakai tombol Acak Urutan)."
+      : "Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.";
+    toggleTourneyTypeSection();
+  });
+
+  tournamentCreateWrap.querySelector("#tourney-shuffle-btn").addEventListener("click", () => {
+    for (let i = participantEntries.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [participantEntries[i], participantEntries[j]] = [participantEntries[j], participantEntries[i]];
+    }
+    renderParticipantRows();
   });
 
   tournamentCreateWrap.querySelector("#tourney-add-participant-btn").addEventListener("click", () => {
@@ -879,7 +911,7 @@ async function renderAdmin(container) {
       return;
     }
     let p2Id = null;
-    if (type === "doubles") {
+    if (type === "doubles" && !isCappuccino()) {
       const picker2 = tournamentCreateWrap.querySelector("#tourney-add-picker2");
       p2Id = Number(picker2.value);
       if (!p2Id) {
@@ -912,6 +944,7 @@ async function renderAdmin(container) {
     const type = tournamentCreateWrap.querySelector("#tourney-type").value;
     const format = tournamentCreateWrap.querySelector("#tourney-format").value;
     const numGroups = Number(tournamentCreateWrap.querySelector("#tourney-num-groups").value);
+    const numCourts = Number(tournamentCreateWrap.querySelector("#tourney-num-courts").value);
     const errorEl = tournamentCreateWrap.querySelector("#tourney-error");
     errorEl.style.display = "none";
 
@@ -920,7 +953,12 @@ async function renderAdmin(container) {
       errorEl.style.display = "block";
       return;
     }
-    if (participantEntries.length < 2) {
+    if (format === "cappuccino" && participantEntries.length < 4) {
+      errorEl.textContent = "Sistem Cappuccino butuh minimal 4 peserta";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (format !== "cappuccino" && participantEntries.length < 2) {
       errorEl.textContent = "Tambahkan minimal 2 peserta";
       errorEl.style.display = "block";
       return;
@@ -936,14 +974,18 @@ async function renderAdmin(container) {
       return;
     }
 
-    const participantIds = type === "doubles"
+    const participantIds = (type === "doubles" && format !== "cappuccino")
       ? participantEntries.map((e) => [e.p1Id, e.p2Id])
       : participantEntries.map((e) => e.p1Id);
 
     try {
       const data = await api("/admin/tournaments", {
         method: "POST",
-        body: JSON.stringify({ name, format, type, participantIds, numGroups: format === "group_knockout" ? numGroups : undefined }),
+        body: JSON.stringify({
+          name, format, type, participantIds,
+          numGroups: format === "group_knockout" ? numGroups : undefined,
+          numCourts: format === "cappuccino" ? numCourts : undefined,
+        }),
       });
       alert(data.message);
       state.selectedTournamentId = data.tournamentId;
@@ -1125,7 +1167,7 @@ async function renderTournaments(container) {
     }
     list.innerHTML = "";
     filtered.forEach((t) => {
-      const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi" }[t.format] || "Round Robin";
+      const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi", cappuccino: "Sistem Cappuccino" }[t.format] || "Round Robin";
       const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
       const statusBadge = t.status === "completed"
         ? `<span style="font-size:11px;background:#e0e0e0;color:#555;padding:2px 8px;border-radius:6px">Selesai</span>`
@@ -1251,11 +1293,11 @@ async function renderTournamentDetail(container) {
   }
 
   try {
-    const { tournament, matches, standings, groups, knockoutMatches, canStartKnockout } = await api(`/tournaments/${tId}`);
+    const { tournament, matches, standings, groups, knockoutMatches, canStartKnockout, cappuccinoRounds, cappuccinoRanking } = await api(`/tournaments/${tId}`);
     const isAdmin = state.player && state.player.isAdmin;
     const detail = wrap.querySelector("#tournament-detail");
 
-    const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)" }[tournament.format];
+    const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)", cappuccino: "Sistem Cappuccino" }[tournament.format];
     let html = `<h2>🏆 ${tournament.name}</h2>`;
     html += `<p class="muted" style="font-size:13px">${formatLabel} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
 
@@ -1281,6 +1323,15 @@ async function renderTournamentDetail(container) {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">🏆 Babak Knockout</h3>`;
         html += buildBracketDiagramHtml(knockoutMatches, isAdmin);
       }
+    } else if (tournament.format === "cappuccino") {
+      html += `<h3 style="margin-top:1rem;font-size:15px">☕ Peringkat Individu</h3>`;
+      html += `<table class="lb-table"><thead><tr><th>#</th><th>Peserta</th><th>Poin</th></tr></thead><tbody>`;
+      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}</td><td>+${r.points}</td></tr>`; });
+      html += `</tbody></table>`;
+      cappuccinoRounds.forEach((rd) => {
+        html += `<h3 style="margin-top:1.25rem;font-size:15px">Ronde ${rd.round}</h3>`;
+        html += buildMatchListHtml(rd.matches, isAdmin);
+      });
     }
 
     detail.innerHTML = html;
