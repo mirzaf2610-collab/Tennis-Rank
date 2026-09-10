@@ -53,6 +53,8 @@ model Player {
   emailVerificationTokens EmailVerificationToken[]
   pushSubscriptions PushSubscription[]
   seasonRecords SeasonRecord[]
+  tournamentParticipationsP1 TournamentParticipant[] @relation("TournamentParticipantP1")
+  tournamentParticipationsP2 TournamentParticipant[] @relation("TournamentParticipantP2")
 
   @@map("players")
 }
@@ -88,6 +90,7 @@ model Match {
   loser     Player @relation("LoserMatches", fields: [loserId], references: [id])
   submitter Player @relation("SubmittedMatches", fields: [inputBy], references: [id])
   ratingHistory RatingHistory[]
+  tournamentMatch TournamentMatch? @relation("TournamentSingleMatch")
 
   @@map("matches")
 }
@@ -151,6 +154,7 @@ model DoublesMatch {
   submitter    Player @relation("DoublesSubmitted", fields: [inputBy], references: [id])
 
   ratingHistory DoublesRatingHistory[]
+  tournamentMatch TournamentMatch? @relation("TournamentDoublesMatch")
 
   @@map("doubles_matches")
 }
@@ -248,4 +252,61 @@ model SeasonRecord {
 
   @@unique([seasonId, playerId])
   @@map("season_records")
+}
+
+model Tournament {
+  id          Int       @id @default(autoincrement())
+  name        String
+  format      String    // "round_robin" | "bracket"
+  type        String    @default("singles") // "singles" | "doubles"
+  status      String    @default("ongoing") // ongoing | completed
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  participants TournamentParticipant[]
+  matches      TournamentMatch[]
+
+  @@map("tournaments")
+}
+
+// 1 "peserta" turnamen = 1 pemain (Single) ATAU 1 tim berisi 2 pemain (Ganda, player2Id terisi)
+model TournamentParticipant {
+  id           Int  @id @default(autoincrement())
+  tournamentId Int  @map("tournament_id")
+  player1Id    Int  @map("player1_id")
+  player2Id    Int? @map("player2_id") // cuma terisi untuk turnamen Ganda
+  seed         Int
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id])
+  player1    Player     @relation("TournamentParticipantP1", fields: [player1Id], references: [id])
+  player2    Player?    @relation("TournamentParticipantP2", fields: [player2Id], references: [id])
+
+  matchesAsParticipant1 TournamentMatch[] @relation("TMParticipant1")
+  matchesAsParticipant2 TournamentMatch[] @relation("TMParticipant2")
+  matchesWon            TournamentMatch[] @relation("TMWinnerParticipant")
+
+  @@map("tournament_participants")
+}
+
+model TournamentMatch {
+  id                  Int      @id @default(autoincrement())
+  tournamentId        Int      @map("tournament_id")
+  round               Int      @default(1)
+  matchIndex          Int      @map("match_index")
+  participant1Id      Int?     @map("participant1_id")
+  participant2Id      Int?     @map("participant2_id")
+  winnerParticipantId Int?     @map("winner_participant_id")
+  singleMatchId        Int?    @unique @map("single_match_id")
+  doublesMatchId       Int?    @unique @map("doubles_match_id")
+  status              String   @default("pending") // pending | bye | completed
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  tournament        Tournament             @relation(fields: [tournamentId], references: [id])
+  participant1      TournamentParticipant? @relation("TMParticipant1", fields: [participant1Id], references: [id])
+  participant2      TournamentParticipant? @relation("TMParticipant2", fields: [participant2Id], references: [id])
+  winnerParticipant TournamentParticipant? @relation("TMWinnerParticipant", fields: [winnerParticipantId], references: [id])
+  singleMatch       Match?                 @relation("TournamentSingleMatch", fields: [singleMatchId], references: [id])
+  doublesMatch      DoublesMatch?          @relation("TournamentDoublesMatch", fields: [doublesMatchId], references: [id])
+
+  @@map("tournament_matches")
 }
