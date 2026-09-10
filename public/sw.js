@@ -8,9 +8,14 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Pass-through saja — biarkan semua request langsung ke network seperti biasa.
+// Sengaja TIDAK pakai event.respondWith() di sini. Sempat pakai
+// event.respondWith(fetch(event.request)) tapi itu bisa bikin error di Safari/iOS
+// khususnya untuk request POST yang bawa data (body-nya cuma bisa "dibaca" sekali,
+// reconstruct ulang lewat fetch() kadang gagal). Cukup daftarkan listener ini saja
+// (tanpa isi) supaya syarat PWA "installable" tetap terpenuhi, tapi biarkan
+// browser tangani semua request secara normal seperti biasa.
 self.addEventListener("fetch", (event) => {
-  event.respondWith(fetch(event.request));
+  // sengaja dibiarkan kosong
 });
 
 // Terima push notification dari server, tampilkan ke pengguna
