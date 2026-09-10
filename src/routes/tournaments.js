@@ -42,6 +42,92 @@ function participantLabel(p) {
   return p.player2 ? `${p.player1.name}/${p.player2.name}` : p.player1.name;
 }
 
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Hitung jumlah ronde IDEAL buat Sistem Cappuccino, supaya SEMUA pemain dijamin
+// main jumlah yang PERSIS SAMA (tidak peduli genap/ganjil/berapapun jumlah peserta).
+// Rumus: kelipatan dari n / FPB(n, jumlah_istirahat_per_ronde)
+function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+function computeIdealRounds(n, numCourts) {
+  let active = Math.min(n, numCourts * 4);
+  active = active - (active % 4);
+  const sitOutPerRound = n - active;
+  if (sitOutPerRound === 0) return Math.max(4, Math.ceil(n / 2)); // semua selalu main, pilih jumlah ronde wajar
+  const g = gcd(n, sitOutPerRound);
+  const minRoundsForFairness = n / g;
+  // Jangan kependekan (variasi partner kurang) atau kepanjangan (kelamaan main) -- ambil kelipatan wajar
+  let rounds = minRoundsForFairness;
+  while (rounds < 5) rounds += minRoundsForFairness;
+  while (rounds > 12) rounds -= minRoundsForFairness;
+  return rounds;
+}
+
+// Coba beberapa kali urutan acak, ambil yang PALING SEDIKIT partner berulang
+function pairUpRound(playersInRound, partnerCount, key) {
+  let best = null, bestRepeats = Infinity;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const remaining = shuffleArray(playersInRound);
+    const teams = [];
+    let repeats = 0;
+    while (remaining.length > 0) {
+      const a = remaining.shift();
+      let bestIdx = 0, bestCount = Infinity;
+      remaining.forEach((b, idx) => {
+        const c = partnerCount[key(a, b)];
+        if (c < bestCount) { bestCount = c; bestIdx = idx; }
+      });
+      const b = remaining.splice(bestIdx, 1)[0];
+      if (partnerCount[key(a, b)] > 0) repeats++;
+      teams.push([a, b]);
+    }
+    if (repeats < bestRepeats) { bestRepeats = repeats; best = teams; }
+    if (bestRepeats === 0) break;
+  }
+  return best;
+}
+
+// Bangun jadwal lengkap Sistem Cappuccino: rotasi partner otomatis, istirahat merata.
+// participantIds = daftar ID peserta INDIVIDU (bukan tim, karena partner ganti-ganti tiap ronde).
+// Return: array of { round, matches: [{p1, p1b, p2, p2b}] }
+function generateCappuccinoSchedule(participantIds, numCourts, numRounds) {
+  const n = participantIds.length;
+  let active = Math.min(n, numCourts * 4);
+  active = active - (active % 4);
+  const sitOutNeeded = n - active;
+
+  const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
+  const partnerCount = {};
+  const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
+  participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) partnerCount[key(a, b)] = 0; }));
+
+  const schedule = [];
+  for (let r = 1; r <= numRounds; r++) {
+    const sorted = shuffleArray(participantIds).sort((a, b) => sitOutCount[a] - sitOutCount[b]);
+    const sittingOut = sorted.slice(0, sitOutNeeded);
+    const playing = participantIds.filter((p) => !sittingOut.includes(p));
+    sittingOut.forEach((p) => sitOutCount[p]++);
+
+    const teams = pairUpRound(playing, partnerCount, key);
+    teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
+
+    const matches = [];
+    for (let i = 0; i < teams.length; i += 2) {
+      if (teams[i + 1]) {
+        matches.push({ p1: teams[i][0], p1b: teams[i][1], p2: teams[i + 1][0], p2b: teams[i + 1][1] });
+      }
+    }
+    schedule.push({ round: r, matches });
+  }
+  return schedule;
+}
+
 // Buat match round-robin (semua lawan semua) untuk sekelompok participantId.
 // stage: "main" (format Round Robin biasa) atau "group" (fase grup di Setengah Kompetisi)
 async function generateRoundRobinMatches(tx, tournamentId, participantIds, stage, groupNumber) {
@@ -110,21 +196,35 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
 // Untuk Single, participantIds berisi array id biasa: [id1, id2, id3, ...]
 // Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
-  const { name, format, type, participantIds, numGroups } = req.body;
-  const tType = type === "doubles" ? "doubles" : "singles";
+  const { name, format, type, participantIds, numGroups, numCourts } = req.body;
+  const tType = format === "cappuccino" ? "doubles" : (type === "doubles" ? "doubles" : "singles");
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
     return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Nama, format, dan minimal 2 peserta wajib diisi" } });
   }
-  if (!["round_robin", "bracket", "group_knockout"].includes(format)) {
+  if (!["round_robin", "bracket", "group_knockout", "cappuccino"].includes(format)) {
     return res.status(400).json({ error: { code: "INVALID_FORMAT", message: "Format tidak valid" } });
   }
   if (format === "group_knockout" && (!numGroups || numGroups < 2)) {
     return res.status(400).json({ error: { code: "INVALID_GROUPS", message: "Jumlah grup minimal 2" } });
   }
+  if (format === "cappuccino") {
+    if (participantIds.length < 4) {
+      return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Sistem Cappuccino butuh minimal 4 peserta" } });
+    }
+    if (![1, 2].includes(numCourts)) {
+      return res.status(400).json({ error: { code: "INVALID_COURTS", message: "Jumlah lapangan harus 1 atau 2" } });
+    }
+  }
 
   let normalized;
-  if (tType === "doubles") {
+  if (format === "cappuccino") {
+    // Sistem Cappuccino: peserta individu (partner ganti-ganti tiap ronde, bukan tim tetap)
+    normalized = participantIds.map((p1) => ({ p1, p2: null }));
+    if (new Set(participantIds).size !== participantIds.length) {
+      return res.status(400).json({ error: { code: "DUPLICATE_PARTICIPANT", message: "Peserta tidak boleh dobel" } });
+    }
+  } else if (tType === "doubles") {
     if (!participantIds.every((pair) => Array.isArray(pair) && pair.length === 2)) {
       return res.status(400).json({ error: { code: "INVALID_TEAMS", message: "Untuk Ganda, tiap peserta harus berupa pasangan [id1, id2]" } });
     }
@@ -157,6 +257,23 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
         await generateRoundRobinMatches(tx, t.id, createdParticipants.map((p) => p.id), "main", null);
       } else if (format === "bracket") {
         await generateBracketMatches(tx, t.id, createdParticipants.map((p) => p.id), "main");
+      } else if (format === "cappuccino") {
+        const participantIdsOnly = createdParticipants.map((p) => p.id);
+        const numRounds = computeIdealRounds(participantIdsOnly.length, numCourts);
+        const schedule = generateCappuccinoSchedule(participantIdsOnly, numCourts, numRounds);
+        for (const { round, matches } of schedule) {
+          for (let mi = 0; mi < matches.length; mi++) {
+            const m = matches[mi];
+            await tx.tournamentMatch.create({
+              data: {
+                tournamentId: t.id, stage: "main", round, matchIndex: mi,
+                participant1Id: m.p1, participant1bId: m.p1b,
+                participant2Id: m.p2, participant2bId: m.p2b,
+                status: "pending",
+              },
+            });
+          }
+        }
       } else {
         // group_knockout: buat fase grup dulu, fase knockout menyusul manual lewat tombol admin
         for (let g = 1; g <= numGroups; g++) {
@@ -337,6 +454,8 @@ router.get("/tournaments/:id", async (req, res) => {
       include: {
         participant1: { include: { player1: true, player2: true } },
         participant2: { include: { player1: true, player2: true } },
+        participant1b: { include: { player1: true, player2: true } },
+        participant2b: { include: { player1: true, player2: true } },
         winnerParticipant: { include: { player1: true, player2: true } },
       },
       orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
@@ -360,15 +479,22 @@ router.get("/tournaments/:id", async (req, res) => {
       } else if (m.doublesMatchId && doublesScoreById[m.doublesMatchId]) {
         score = `6-${doublesScoreById[m.doublesMatchId].loserGames}`;
       }
+      // Untuk Cappuccino, gabungkan label participant1+1b jadi 1 nama tim "A/B"
+      const team1Label = m.participant1b
+        ? `${participantLabel(m.participant1)}/${participantLabel(m.participant1b)}`
+        : (m.participant1 ? participantLabel(m.participant1) : null);
+      const team2Label = m.participant2b
+        ? `${participantLabel(m.participant2)}/${participantLabel(m.participant2b)}`
+        : (m.participant2 ? participantLabel(m.participant2) : null);
       return {
       id: m.id,
       stage: m.stage,
       groupNumber: m.groupNumber,
       round: m.round,
       matchIndex: m.matchIndex,
-      participant1: m.participant1 ? { id: m.participant1.id, label: participantLabel(m.participant1) } : null,
-      participant2: m.participant2 ? { id: m.participant2.id, label: participantLabel(m.participant2) } : null,
-      winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: participantLabel(m.winnerParticipant) } : null,
+      participant1: m.participant1 ? { id: m.participant1.id, label: team1Label } : null,
+      participant2: m.participant2 ? { id: m.participant2.id, label: team2Label } : null,
+      winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: m.winnerParticipant.id === (m.participant1 && m.participant1.id) ? team1Label : team2Label } : null,
       status: m.status,
       score,
       };
@@ -378,6 +504,8 @@ router.get("/tournaments/:id", async (req, res) => {
     let groups = null;
     let knockoutMatches = null;
     let canStartKnockout = false;
+    let cappuccinoRounds = null;
+    let cappuccinoRanking = null;
 
     if (tournament.format === "round_robin") {
       standings = await computeStandings(prisma, participants, matches);
@@ -397,6 +525,29 @@ router.get("/tournaments/:id", async (req, res) => {
       knockoutMatches = knockoutRaw.length > 0 ? knockoutRaw.map(toOut) : null;
       const pendingGroup = matches.filter((m) => m.stage === "group" && m.status === "pending").length;
       canStartKnockout = pendingGroup === 0 && knockoutRaw.length === 0;
+    } else if (tournament.format === "cappuccino") {
+      // Kelompokkan match per ronde buat ditampilkan
+      const roundNumbers = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+      cappuccinoRounds = roundNumbers.map((r) => ({
+        round: r,
+        matches: matches.filter((m) => m.round === r).sort((a, b) => a.matchIndex - b.matchIndex).map(toOut),
+      }));
+
+      // Hitung poin individu: menang = +selisih game, kalah = +0. Berlaku utk kedua anggota tim.
+      const points = {};
+      const labelByParticipant = {};
+      participants.forEach((p) => { points[p.id] = 0; labelByParticipant[p.id] = participantLabel(p); });
+
+      matches.filter((m) => m.status === "completed" && m.doublesMatchId && doublesScoreById[m.doublesMatchId]).forEach((m) => {
+        const margin = 6 - doublesScoreById[m.doublesMatchId].loserGames;
+        const winIsTeam1 = m.winnerParticipantId === m.participant1Id;
+        const winnerIds = winIsTeam1 ? [m.participant1Id, m.participant1bId] : [m.participant2Id, m.participant2bId];
+        winnerIds.forEach((pid) => { if (pid != null) points[pid] = (points[pid] || 0) + margin; });
+      });
+
+      cappuccinoRanking = participants
+        .map((p) => ({ participantId: p.id, label: labelByParticipant[p.id], points: points[p.id] || 0 }))
+        .sort((a, b) => b.points - a.points);
     }
 
     res.json({
@@ -407,6 +558,8 @@ router.get("/tournaments/:id", async (req, res) => {
       groups,
       knockoutMatches,
       canStartKnockout,
+      cappuccinoRounds,
+      cappuccinoRanking,
     });
   } catch (e) {
     console.error("Gagal ambil detail turnamen:", e);
@@ -430,7 +583,7 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
 
       const tm = await tx.tournamentMatch.findUnique({
         where: { id: tmId },
-        include: { participant1: true, participant2: true },
+        include: { participant1: true, participant2: true, participant1b: true, participant2b: true },
       });
       if (!tm || tm.tournamentId !== tournamentId) {
         throw Object.assign(new Error("Match turnamen tidak ditemukan"), { status: 404 });
@@ -492,6 +645,67 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
           ],
         });
         await tx.tournamentMatch.update({ where: { id: tmId }, data: { winnerParticipantId, singleMatchId: match.id, status: "completed" } });
+      } else if (tournament.format === "cappuccino") {
+        if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
+          throw Object.assign(new Error("Pemenang harus salah satu dari kedua tim di match ini"), { status: 400 });
+        }
+        winnerParticipantId = winnerId;
+        const winningIsSide1 = winnerId === tm.participant1Id;
+        const winP1 = winningIsSide1 ? tm.participant1 : tm.participant2;
+        const winP2 = winningIsSide1 ? tm.participant1b : tm.participant2b;
+        const loseP1 = winningIsSide1 ? tm.participant2 : tm.participant1;
+        const loseP2 = winningIsSide1 ? tm.participant2b : tm.participant1b;
+        if (loserGames == null || loserGames < 0 || loserGames > 5) {
+          throw Object.assign(new Error("Skor harus 0-5"), { status: 400 });
+        }
+
+        const ids = [winP1.player1Id, winP2.player1Id, loseP1.player1Id, loseP2.player1Id].sort((a, b) => a - b);
+        await tx.$executeRawUnsafe(`SELECT id FROM players WHERE id IN (${ids.join(",")}) FOR UPDATE`);
+        const [wp1, wp2, lp1, lp2] = await Promise.all([
+          tx.player.findUnique({ where: { id: winP1.player1Id } }),
+          tx.player.findUnique({ where: { id: winP2.player1Id } }),
+          tx.player.findUnique({ where: { id: loseP1.player1Id } }),
+          tx.player.findUnique({ where: { id: loseP2.player1Id } }),
+        ]);
+        const kFactorsCap = {
+          t1p1: getKFactor(wp1.doublesMatchesPlayed), t1p2: getKFactor(wp2.doublesMatchesPlayed),
+          t2p1: getKFactor(lp1.doublesMatchesPlayed), t2p2: getKFactor(lp2.doublesMatchesPlayed),
+        };
+        elo = calculateDoublesElo({
+          team1Player1Rating: wp1.doublesRating, team1Player2Rating: wp2.doublesRating,
+          team2Player1Rating: lp1.doublesRating, team2Player2Rating: lp2.doublesRating,
+          winningTeam: 1, loserGames, kFactors: kFactorsCap,
+        });
+
+        const dmCap = await tx.doublesMatch.create({
+          data: {
+            team1Player1Id: wp1.id, team1Player2Id: wp2.id, team2Player1Id: lp1.id, team2Player2Id: lp2.id,
+            winningTeam: 1, loserGames, inputBy: req.playerId,
+            confirmedT1P1: true, confirmedT1P2: true, confirmedT2P1: true, confirmedT2P2: true,
+            status: "confirmed", confirmedAt: new Date(),
+            team1RatingBefore: elo.team1Rating, team2RatingBefore: elo.team2Rating, marginMultiplier: elo.marginMultiplier,
+            t1p1RatingBefore: wp1.doublesRating, t1p1RatingAfter: elo.t1p1After,
+            t1p2RatingBefore: wp2.doublesRating, t1p2RatingAfter: elo.t1p2After,
+            t2p1RatingBefore: lp1.doublesRating, t2p1RatingAfter: elo.t2p1After,
+            t2p2RatingBefore: lp2.doublesRating, t2p2RatingAfter: elo.t2p2After,
+          },
+        });
+
+        const updatesCap = [
+          { p: wp1, after: elo.t1p1After }, { p: wp2, after: elo.t1p2After },
+          { p: lp1, after: elo.t2p1After }, { p: lp2, after: elo.t2p2After },
+        ];
+        for (const { p, after } of updatesCap) {
+          await tx.player.update({
+            where: { id: p.id },
+            data: { doublesRating: after, doublesMatchesPlayed: { increment: 1 }, doublesIsProvisional: p.doublesMatchesPlayed + 1 < PROVISIONAL_THRESHOLD },
+          });
+        }
+        await tx.doublesRatingHistory.createMany({
+          data: updatesCap.map(({ p, after }) => ({ playerId: p.id, matchId: dmCap.id, ratingBefore: p.doublesRating, ratingAfter: after })),
+        });
+
+        await tx.tournamentMatch.update({ where: { id: tmId }, data: { winnerParticipantId, doublesMatchId: dmCap.id, status: "completed" } });
       } else {
         if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
           throw Object.assign(new Error("Pemenang harus salah satu dari kedua tim di match ini"), { status: 400 });
