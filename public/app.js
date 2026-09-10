@@ -1260,8 +1260,8 @@ async function renderTournamentDetail(container) {
 
     if (tournament.format === "round_robin") {
       html += `<h3 style="margin-top:1rem;font-size:15px">Klasemen</h3>`;
-      html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th></tr></thead><tbody>`;
-      standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td></tr>`; });
+      html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th><th>Sel. Game</th></tr></thead><tbody>`;
+      standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.gameDiff >= 0 ? "+" : ""}${s.gameDiff}</td></tr>`; });
       html += `</tbody></table>`;
       html += `<h3 style="margin-top:1rem;font-size:15px">Pertandingan</h3>`;
       html += buildMatchListHtml(matches, isAdmin);
@@ -1271,8 +1271,8 @@ async function renderTournamentDetail(container) {
     } else if (tournament.format === "group_knockout") {
       groups.forEach((g) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Grup ${g.groupNumber}</h3>`;
-        html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th></tr></thead><tbody>`;
-        g.standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td></tr>`; });
+        html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th><th>Sel. Game</th></tr></thead><tbody>`;
+        g.standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.gameDiff >= 0 ? "+" : ""}${s.gameDiff}</td></tr>`; });
         html += `</tbody></table>`;
         html += buildMatchListHtml(g.matches, isAdmin);
       });
