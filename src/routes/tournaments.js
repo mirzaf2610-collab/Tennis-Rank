@@ -20,6 +20,23 @@ function nextPowerOfTwo(n) {
   return p;
 }
 
+// Urutan seeding standar turnamen (sama seperti dipakai turnamen tenis sungguhan) --
+// memastikan "bye" (menang otomatis) tersebar rata, TIDAK PERNAH ada 1 match yang
+// kedua slotnya sama-sama kosong. Return array nomor seed (1-indexed) sesuai urutan slot bracket.
+function standardSeedOrder(size) {
+  let seeds = [1];
+  while (seeds.length < size) {
+    const n = seeds.length;
+    const next = [];
+    seeds.forEach((s) => {
+      next.push(s);
+      next.push(2 * n + 1 - s);
+    });
+    seeds = next;
+  }
+  return seeds;
+}
+
 function participantLabel(p) {
   if (!p) return null;
   return p.player2 ? `${p.player1.name}/${p.player2.name}` : p.player1.name;
@@ -43,12 +60,14 @@ async function generateRoundRobinMatches(tx, tournamentId, participantIds, stage
   }
 }
 
-// Buat bracket eliminasi dari sekelompok participantId (urut = seeding).
+// Buat bracket eliminasi dari sekelompok participantId (urut = seeding, index 0 = seed terkuat).
 // stage: "main" (format Bracket biasa) atau "knockout" (fase gugur di Setengah Kompetisi)
+// Pakai standardSeedOrder supaya bye tersebar rata -- peserta yang dapat bye otomatis
+// "menang" babak 1 tanpa tanding, langsung maju ke babak 2, TIDAK PERNAH ada match kosong lawan kosong.
 async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
   const bracketSize = nextPowerOfTwo(participantIds.length);
-  const slots = [...participantIds];
-  while (slots.length < bracketSize) slots.push(null);
+  const seedOrder = standardSeedOrder(bracketSize);
+  const slots = seedOrder.map((seedNum) => (seedNum <= participantIds.length ? participantIds[seedNum - 1] : null));
 
   const numRounds = Math.log2(bracketSize);
   const roundMatches = {};
@@ -80,6 +99,8 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
         await tx.tournamentMatch.update({ where: { id: nextMatch.id }, data: { [slotField]: winner } });
       }
     }
+    // Kalau p1 dan p2 dua-duanya null, itu berarti ada bug seeding -- seharusnya
+    // tidak pernah terjadi dengan standardSeedOrder di atas, dibiarkan pending kosong sebagai jaga-jaga.
   }
 }
 
@@ -190,15 +211,11 @@ router.post("/admin/tournaments/:id/start-knockout", requireAuth, requireAdmin, 
 
       for (let g = 1; g <= numGroups; g++) {
         const groupParticipants = participants.filter((p) => p.groupNumber === g);
-        const wins = {};
-        groupParticipants.forEach((p) => { wins[p.id] = 0; });
-        groupMatches
-          .filter((m) => m.groupNumber === g && m.status === "completed" && m.winnerParticipantId)
-          .forEach((m) => { wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1; });
-        const ranked = groupParticipants.sort((a, b) => (wins[b.id] || 0) - (wins[a.id] || 0));
-        ranked.slice(0, advancePerGroup).forEach((p, rankIdx) => {
+        const groupMatchesForG = groupMatches.filter((m) => m.groupNumber === g);
+        const ranked = await computeStandings(tx, groupParticipants, groupMatchesForG);
+        ranked.slice(0, advancePerGroup).forEach((entry, rankIdx) => {
           if (!qualifiersByRank[rankIdx]) qualifiersByRank[rankIdx] = [];
-          qualifiersByRank[rankIdx].push(p.id);
+          qualifiersByRank[rankIdx].push(entry.participantId);
         });
       }
 
@@ -229,20 +246,75 @@ router.get("/tournaments", async (req, res) => {
   }
 });
 
-function computeStandings(participants, matches) {
+// Hitung klasemen grup/round-robin, dengan aturan tie-breaker kalau menang sama banyak:
+// 1) Head-to-head (siapa menang saat mereka bertanding langsung)
+// 2) Kalau masih seri (3+ orang seri), pakai selisih game total
+async function computeStandings(db, participants, matches) {
   const wins = {};
   const losses = {};
-  participants.forEach((p) => { wins[p.id] = 0; losses[p.id] = 0; });
-  matches.forEach((m) => {
-    if (m.status === "completed" && m.winnerParticipantId) {
-      wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1;
-      const loserId = m.participant1Id === m.winnerParticipantId ? m.participant2Id : m.participant1Id;
-      losses[loserId] = (losses[loserId] || 0) + 1;
+  const gameDiff = {};
+  const h2hWinner = {}; // key: "idKecil-idBesar" -> participantId yang menang
+  participants.forEach((p) => { wins[p.id] = 0; losses[p.id] = 0; gameDiff[p.id] = 0; });
+
+  const completed = matches.filter((m) => m.status === "completed" && m.winnerParticipantId);
+
+  // Ambil skor asli dari Match/DoublesMatch yang terhubung, buat hitung selisih game
+  const singleIds = completed.filter((m) => m.singleMatchId).map((m) => m.singleMatchId);
+  const doublesIds = completed.filter((m) => m.doublesMatchId).map((m) => m.doublesMatchId);
+  const [singleMatches, doublesMatchesData] = await Promise.all([
+    singleIds.length ? db.match.findMany({ where: { id: { in: singleIds } } }) : [],
+    doublesIds.length ? db.doublesMatch.findMany({ where: { id: { in: doublesIds } } }) : [],
+  ]);
+  const singleById = Object.fromEntries(singleMatches.map((m) => [m.id, m]));
+  const doublesById = Object.fromEntries(doublesMatchesData.map((m) => [m.id, m]));
+
+  completed.forEach((m) => {
+    wins[m.winnerParticipantId] = (wins[m.winnerParticipantId] || 0) + 1;
+    const loserId = m.participant1Id === m.winnerParticipantId ? m.participant2Id : m.participant1Id;
+    losses[loserId] = (losses[loserId] || 0) + 1;
+
+    const key = [m.participant1Id, m.participant2Id].sort((a, b) => a - b).join("-");
+    h2hWinner[key] = m.winnerParticipantId;
+
+    let winnerGames = 0, loserGames = 0;
+    if (m.singleMatchId && singleById[m.singleMatchId]) {
+      winnerGames = singleById[m.singleMatchId].targetGames;
+      loserGames = singleById[m.singleMatchId].loserGames;
+    } else if (m.doublesMatchId && doublesById[m.doublesMatchId]) {
+      winnerGames = 6;
+      loserGames = doublesById[m.doublesMatchId].loserGames;
     }
+    const diff = winnerGames - loserGames;
+    gameDiff[m.winnerParticipantId] = (gameDiff[m.winnerParticipantId] || 0) + diff;
+    gameDiff[loserId] = (gameDiff[loserId] || 0) - diff;
   });
-  return participants
-    .map((p) => ({ participantId: p.id, label: participantLabel(p), wins: wins[p.id] || 0, losses: losses[p.id] || 0 }))
-    .sort((a, b) => b.wins - a.wins);
+
+  const entries = participants.map((p) => ({
+    participantId: p.id, label: participantLabel(p),
+    wins: wins[p.id] || 0, losses: losses[p.id] || 0, gameDiff: gameDiff[p.id] || 0,
+  }));
+
+  // Kelompokkan berdasarkan jumlah menang, lalu urutkan yang seri pakai head-to-head + selisih game
+  const byWins = {};
+  entries.forEach((e) => { (byWins[e.wins] = byWins[e.wins] || []).push(e); });
+  const winLevels = Object.keys(byWins).map(Number).sort((a, b) => b - a);
+  let sorted = [];
+  winLevels.forEach((w) => {
+    const tied = byWins[w];
+    if (tied.length > 1) {
+      tied.forEach((e) => {
+        e._h2hWins = tied.filter((o) => o.participantId !== e.participantId).filter((o) => {
+          const key = [e.participantId, o.participantId].sort((a, b) => a - b).join("-");
+          return h2hWinner[key] === e.participantId;
+        }).length;
+      });
+      tied.sort((a, b) => b._h2hWins - a._h2hWins || b.gameDiff - a.gameDiff);
+      tied.forEach((e) => { delete e._h2hWins; });
+    }
+    sorted = sorted.concat(tied);
+  });
+
+  return sorted;
 }
 
 // GET /api/tournaments/:id - detail turnamen
@@ -288,7 +360,7 @@ router.get("/tournaments/:id", async (req, res) => {
     let canStartKnockout = false;
 
     if (tournament.format === "round_robin") {
-      standings = computeStandings(participants, matches);
+      standings = await computeStandings(prisma, participants, matches);
     } else if (tournament.format === "group_knockout") {
       const numGroups = Math.max(0, ...participants.map((p) => p.groupNumber || 0));
       groups = [];
@@ -297,7 +369,7 @@ router.get("/tournaments/:id", async (req, res) => {
         const groupMatchesRaw = matches.filter((m) => m.stage === "group" && m.groupNumber === g);
         groups.push({
           groupNumber: g,
-          standings: computeStandings(groupParticipants, groupMatchesRaw),
+          standings: await computeStandings(prisma, groupParticipants, groupMatchesRaw),
           matches: groupMatchesRaw.map(toOut),
         });
       }
