@@ -405,6 +405,78 @@ async function renderLeaderboard(container) {
   }
 
   let currentMode = "double";
+  const PAGE_SIZE = 10;
+  let fullLeaderboard = [];
+  let currentPage = 0; // 0-indexed
+
+  function renderPage() {
+    const list = wrap.querySelector("#lb-list");
+    if (fullLeaderboard.length === 0) {
+      const minText = currentMode === "double" ? "minimal 2 match" : "minimal 1 match";
+      list.innerHTML = `<p class="muted">Belum ada pemain dengan ${minText}.</p>`;
+      return;
+    }
+    const maxMatches = Math.max(...fullLeaderboard.map((p) => p.matchesPlayed));
+    const totalPages = Math.ceil(fullLeaderboard.length / PAGE_SIZE);
+    currentPage = Math.min(currentPage, totalPages - 1);
+    const start = currentPage * PAGE_SIZE;
+    const pageItems = fullLeaderboard.slice(start, start + PAGE_SIZE);
+
+    const rows = pageItems
+      .map((p) => {
+        const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
+        if (p.matchesPlayed === maxMatches && p.matchesPlayed > 15) badgeTexts.push(`⚡ Antu Lapangan`);
+        const gelarText = badgeTexts.length ? badgeTexts.join("<br/>") : `<span class="muted">-</span>`;
+        const noRespText = p.noResponseCount > 0
+          ? `<span style="color:#c62828">${p.noResponseCount}x</span>`
+          : `<span class="muted">0</span>`;
+        return `
+          <tr>
+            <td>${p.rank}</td>
+            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}</td>
+            <td>${Math.round(p.currentRating)}</td>
+            <td>${p.matchesPlayed}</td>
+            <td>${p.wins}</td>
+            <td>${p.losses}</td>
+            <td>${p.winRate}%</td>
+            <td style="font-size:11px">${gelarText}</td>
+            <td>${noRespText}</td>
+          </tr>`;
+      })
+      .join("");
+
+    let sliderHtml = "";
+    if (totalPages > 1) {
+      const rangeStart = start + 1;
+      const rangeEnd = Math.min(start + PAGE_SIZE, fullLeaderboard.length);
+      sliderHtml = `
+        <div style="margin-top:0.75rem">
+          <div class="muted" style="font-size:12px;text-align:center;margin-bottom:4px">
+            Peringkat ${rangeStart}-${rangeEnd} dari ${fullLeaderboard.length}
+          </div>
+          <input type="range" id="lb-page-slider" min="0" max="${totalPages - 1}" step="1" value="${currentPage}" style="width:100%" />
+        </div>`;
+    }
+
+    list.innerHTML = `
+      <div style="overflow-x:auto">
+        <table class="lb-table">
+          <thead>
+            <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${sliderHtml}`;
+
+    if (totalPages > 1) {
+      const slider = list.querySelector("#lb-page-slider");
+      slider.addEventListener("input", () => {
+        currentPage = Number(slider.value);
+        renderPage();
+      });
+    }
+  }
 
   async function loadBoard() {
     const list = wrap.querySelector("#lb-list");
@@ -413,6 +485,7 @@ async function renderLeaderboard(container) {
     const seasonSelect = wrap.querySelector("#season-select");
     const seasonId = seasonSelect.value;
     const selectedSeason = seasons.find((s) => String(s.id) === String(seasonId));
+    currentPage = 0;
     try {
       let leaderboard;
       if (selectedSeason && !selectedSeason.isActive) {
@@ -425,43 +498,8 @@ async function renderLeaderboard(container) {
         const data = await api(`${endpoint}?sortBy=${sortBy}`);
         leaderboard = data.leaderboard;
       }
-      if (leaderboard.length === 0) {
-        const minText = currentMode === "double" ? "minimal 2 match" : "minimal 1 match";
-        list.innerHTML = `<p class="muted">Belum ada pemain dengan ${minText}.</p>`;
-      } else {
-        const maxMatches = Math.max(...leaderboard.map((p) => p.matchesPlayed));
-        const rows = leaderboard
-          .map((p) => {
-            const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
-            if (p.matchesPlayed === maxMatches && p.matchesPlayed > 15) badgeTexts.push(`⚡ Antu Lapangan`);
-            const gelarText = badgeTexts.length ? badgeTexts.join("<br/>") : `<span class="muted">-</span>`;
-            const noRespText = p.noResponseCount > 0
-              ? `<span style="color:#c62828">${p.noResponseCount}x</span>`
-              : `<span class="muted">0</span>`;
-            return `
-              <tr>
-                <td>${p.rank}</td>
-                <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}</td>
-                <td>${Math.round(p.currentRating)}</td>
-                <td>${p.matchesPlayed}</td>
-                <td>${p.wins}</td>
-                <td>${p.losses}</td>
-                <td>${p.winRate}%</td>
-                <td style="font-size:11px">${gelarText}</td>
-                <td>${noRespText}</td>
-              </tr>`;
-          })
-          .join("");
-        list.innerHTML = `
-          <div style="overflow-x:auto">
-            <table class="lb-table">
-              <thead>
-                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
-      }
+      fullLeaderboard = leaderboard;
+      renderPage();
     } catch (err) {
       list.innerHTML = `<p class="error">${err.message}</p>`;
     }
