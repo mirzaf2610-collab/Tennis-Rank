@@ -54,4 +54,6 @@ label { font-size: 13px; color: #555; }
 .lb-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
 .lb-table td:first-child { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .lb-table img, .lb-table span[style*="border-radius:50%"] { vertical-align: middle; }
+.lb-scroll-hide { scrollbar-width: none; -ms-overflow-style: none; }
+.lb-scroll-hide::-webkit-scrollbar { display: none; }
 
