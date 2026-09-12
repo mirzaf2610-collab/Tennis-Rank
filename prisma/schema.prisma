@@ -36,6 +36,7 @@ model Player {
   isBanned       Boolean  @default(false) @map("is_banned")
   noResponseCount Int     @default(0) @map("no_response_count")
   isDummy        Boolean  @default(false) @map("is_dummy")
+  pendingName    String?  @map("pending_name") // nama baru yang diajukan, nunggu approval admin
   createdAt      DateTime @default(now()) @map("created_at")
 
   matchesWon      Match[]        @relation("WinnerMatches")
