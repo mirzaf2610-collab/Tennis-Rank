@@ -485,6 +485,11 @@ router.get("/tournaments/:id", async (req, res) => {
       const team2Label = m.participant2b
         ? `${participantLabel(m.participant2)}/${participantLabel(m.participant2b)}`
         : (m.participant2 ? participantLabel(m.participant2) : null);
+      // Daftar playerId di tiap sisi match -- dipakai frontend buat cek apakah
+      // pemain yang sedang login adalah salah satu peserta di match ini (khusus
+      // Sistem Cappuccino, supaya peserta sendiri boleh input hasil, bukan cuma admin).
+      const team1PlayerIds = [m.participant1?.player1Id, m.participant1?.player2Id, m.participant1b?.player1Id].filter(Boolean);
+      const team2PlayerIds = [m.participant2?.player1Id, m.participant2?.player2Id, m.participant2b?.player1Id].filter(Boolean);
       return {
       id: m.id,
       stage: m.stage,
@@ -496,6 +501,8 @@ router.get("/tournaments/:id", async (req, res) => {
       winner: m.winnerParticipant ? { id: m.winnerParticipant.id, label: m.winnerParticipant.id === (m.participant1 && m.participant1.id) ? team1Label : team2Label } : null,
       status: m.status,
       score,
+      team1PlayerIds,
+      team2PlayerIds,
       };
     };
 
@@ -587,44 +594,40 @@ router.get("/tournaments/:id", async (req, res) => {
   }
 });
 
-// POST /api/admin/tournaments/:id/matches/:tmId/submit
-// Untuk Single: winnerId = participantId pemenang.
-// Untuk Ganda: winnerId = participantId (ID tim) pemenang.
-router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireAdmin, async (req, res) => {
-  const tournamentId = Number(req.params.id);
-  const tmId = Number(req.params.tmId);
-  const { winnerId, loserGames, targetGames } = req.body;
+// Logika inti input hasil match turnamen -- dipakai baik oleh endpoint /submit (match
+// yang masih pending) maupun /correct (setelah hasil lama dibatalkan/di-reverse duluan).
+// Sengaja dipisah jadi 1 fungsi supaya perhitungan ELO & auto-advance-nya PERSIS SAMA
+// di kedua alur, tidak ada logika yang ke-duplikasi/berisiko beda.
+async function submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, loserGames, targetGames, submittedBy }) {
   const finalTargetGames = targetGames || DEFAULT_TARGET_GAMES;
 
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
-      if (!tournament) throw Object.assign(new Error("Turnamen tidak ditemukan"), { status: 404 });
+  const tournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
+  if (!tournament) throw Object.assign(new Error("Turnamen tidak ditemukan"), { status: 404 });
 
-      const tm = await tx.tournamentMatch.findUnique({
-        where: { id: tmId },
-        include: { participant1: true, participant2: true, participant1b: true, participant2b: true },
-      });
-      if (!tm || tm.tournamentId !== tournamentId) {
-        throw Object.assign(new Error("Match turnamen tidak ditemukan"), { status: 404 });
-      }
-      if (!tm.participant1Id || !tm.participant2Id) {
-        throw Object.assign(new Error("Match ini belum siap dimainkan (menunggu pemenang babak sebelumnya)"), { status: 400 });
-      }
-      if (tm.status === "completed") {
-        throw Object.assign(new Error("Match ini sudah ada hasilnya"), { status: 409 });
-      }
+  const tm = await tx.tournamentMatch.findUnique({
+    where: { id: tmId },
+    include: { participant1: true, participant2: true, participant1b: true, participant2b: true },
+  });
+  if (!tm || tm.tournamentId !== tournamentId) {
+    throw Object.assign(new Error("Match turnamen tidak ditemukan"), { status: 404 });
+  }
+  if (!tm.participant1Id || !tm.participant2Id) {
+    throw Object.assign(new Error("Match ini belum siap dimainkan (menunggu pemenang babak sebelumnya)"), { status: 400 });
+  }
+  if (tm.status === "completed") {
+    throw Object.assign(new Error("Match ini sudah ada hasilnya"), { status: 409 });
+  }
 
-      let elo;
-      let winnerParticipantId;
+  let elo;
+  let winnerParticipantId;
 
-      if (tournament.type === "singles") {
-        if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
-          throw Object.assign(new Error("Pemenang harus salah satu dari kedua pemain di match ini"), { status: 400 });
-        }
-        winnerParticipantId = winnerId;
-        const winnerPlayerId = winnerId === tm.participant1Id ? tm.participant1.player1Id : tm.participant2.player1Id;
-        const loserPlayerId = winnerId === tm.participant1Id ? tm.participant2.player1Id : tm.participant1.player1Id;
+  if (tournament.type === "singles") {
+    if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
+      throw Object.assign(new Error("Pemenang harus salah satu dari kedua pemain di match ini"), { status: 400 });
+    }
+    winnerParticipantId = winnerId;
+    const winnerPlayerId = winnerId === tm.participant1Id ? tm.participant1.player1Id : tm.participant2.player1Id;
+    const loserPlayerId = winnerId === tm.participant1Id ? tm.participant2.player1Id : tm.participant1.player1Id;
         if (loserGames == null || loserGames < 0 || loserGames > finalTargetGames - 1) {
           throw Object.assign(new Error(`Skor harus 0-${finalTargetGames - 1}`), { status: 400 });
         }
@@ -643,7 +646,7 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
         const match = await tx.match.create({
           data: {
             winnerId: winnerPlayerId, loserId: loserPlayerId, loserGames, targetGames: finalTargetGames,
-            inputBy: req.playerId, confirmedByWinner: true, confirmedByLoser: true,
+            inputBy: submittedBy, confirmedByWinner: true, confirmedByLoser: true,
             status: "confirmed", confirmedAt: new Date(),
             ratingWinnerBefore: winner.currentRating, ratingLoserBefore: loser.currentRating,
             ratingWinnerAfter: elo.ratingWinnerAfter, ratingLoserAfter: elo.ratingLoserAfter,
@@ -700,7 +703,7 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
         const dmCap = await tx.doublesMatch.create({
           data: {
             team1Player1Id: wp1.id, team1Player2Id: wp2.id, team2Player1Id: lp1.id, team2Player2Id: lp2.id,
-            winningTeam: 1, loserGames, inputBy: req.playerId,
+            winningTeam: 1, loserGames, inputBy: submittedBy,
             confirmedT1P1: true, confirmedT1P2: true, confirmedT2P1: true, confirmedT2P2: true,
             status: "confirmed", confirmedAt: new Date(),
             team1RatingBefore: elo.team1Rating, team2RatingBefore: elo.team2Rating, marginMultiplier: elo.marginMultiplier,
@@ -759,7 +762,7 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
         const dm = await tx.doublesMatch.create({
           data: {
             team1Player1Id: wp1.id, team1Player2Id: wp2.id, team2Player1Id: lp1.id, team2Player2Id: lp2.id,
-            winningTeam: 1, loserGames, inputBy: req.playerId,
+            winningTeam: 1, loserGames, inputBy: submittedBy,
             confirmedT1P1: true, confirmedT1P2: true, confirmedT2P1: true, confirmedT2P2: true,
             status: "confirmed", confirmedAt: new Date(),
             team1RatingBefore: elo.team1Rating, team2RatingBefore: elo.team2Rating, marginMultiplier: elo.marginMultiplier,
@@ -811,13 +814,155 @@ router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, requireA
         await tx.tournament.update({ where: { id: tournamentId }, data: { status: "completed", completedAt: new Date() } });
       }
 
-      return elo;
-    });
+  return elo;
+}
+
+// POST /api/admin/tournaments/:id/matches/:tmId/submit
+// Untuk Single: winnerId = participantId pemenang.
+// Untuk Ganda: winnerId = participantId (ID tim) pemenang.
+// Otorisasi: admin selalu boleh input untuk match manapun. Selain itu, salah satu
+// pemain yang tampil langsung di match tsb (di format apapun -- Round Robin, Bracket,
+// Setengah Kompetisi, atau Sistem Cappuccino) juga boleh input hasilnya sendiri tanpa
+// perlu admin -- hasil tetap langsung terkonfirmasi (tidak perlu konfirmasi 2 pihak),
+// sama seperti kalau admin yang input.
+router.post("/admin/tournaments/:id/matches/:tmId/submit", requireAuth, async (req, res) => {
+  const tournamentId = Number(req.params.id);
+  const tmId = Number(req.params.tmId);
+  const { winnerId, loserGames, targetGames } = req.body;
+
+  try {
+    const [requester, tournamentForAuth, tmForAuth] = await Promise.all([
+      prisma.player.findUnique({ where: { id: req.playerId } }),
+      prisma.tournament.findUnique({ where: { id: tournamentId } }),
+      prisma.tournamentMatch.findUnique({
+        where: { id: tmId },
+        include: { participant1: true, participant2: true, participant1b: true, participant2b: true },
+      }),
+    ]);
+    if (!tournamentForAuth) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Turnamen tidak ditemukan" } });
+    }
+    if (!tmForAuth || tmForAuth.tournamentId !== tournamentId) {
+      return res.status(404).json({ error: { code: "NOT_FOUND", message: "Match turnamen tidak ditemukan" } });
+    }
+
+    const isAdmin = !!(requester && requester.isAdmin);
+    const allowedPlayerIds = [
+      tmForAuth.participant1 && tmForAuth.participant1.player1Id,
+      tmForAuth.participant1 && tmForAuth.participant1.player2Id,
+      tmForAuth.participant1b && tmForAuth.participant1b.player1Id,
+      tmForAuth.participant2 && tmForAuth.participant2.player1Id,
+      tmForAuth.participant2 && tmForAuth.participant2.player2Id,
+      tmForAuth.participant2b && tmForAuth.participant2b.player1Id,
+    ].filter(Boolean);
+    const isMatchParticipant = allowedPlayerIds.includes(req.playerId);
+    if (!isAdmin && !isMatchParticipant) {
+      return res.status(403).json({ error: { code: "NOT_ALLOWED", message: "Hanya admin atau salah satu pemain di match ini yang bisa input hasil" } });
+    }
+
+    const result = await prisma.$transaction(async (tx) =>
+      submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, loserGames, targetGames, submittedBy: req.playerId })
+    );
 
     res.json({ message: "Hasil match turnamen tersimpan dan rating sudah diupdate.", elo: result });
   } catch (e) {
     const status = e.status || 500;
     res.status(status).json({ error: { code: "SUBMIT_FAILED", message: e.message } });
+  }
+});
+
+// POST /api/admin/tournaments/:id/matches/:tmId/correct
+// Khusus admin: koreksi hasil match turnamen yang SUDAH completed (misal salah pencet
+// pemenang atau salah input skor). Alurnya: balikkan dulu semua dampak rating dari hasil
+// lama (dengan cara yang sama seperti hapus match biasa di panel admin), kosongkan lagi
+// match-nya jadi "pending", lalu input ulang hasil yang benar lewat logika submit yang
+// sama persis -- jadi rating akhirnya PASTI konsisten dengan skor final yang baru.
+router.post("/admin/tournaments/:id/matches/:tmId/correct", requireAuth, requireAdmin, async (req, res) => {
+  const tournamentId = Number(req.params.id);
+  const tmId = Number(req.params.tmId);
+  const { winnerId, loserGames, targetGames } = req.body;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const tournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      if (!tournament) throw Object.assign(new Error("Turnamen tidak ditemukan"), { status: 404 });
+
+      const tm = await tx.tournamentMatch.findUnique({ where: { id: tmId } });
+      if (!tm || tm.tournamentId !== tournamentId) {
+        throw Object.assign(new Error("Match turnamen tidak ditemukan"), { status: 404 });
+      }
+      if (tm.status !== "completed") {
+        throw Object.assign(new Error("Match ini belum ada hasilnya -- gunakan Input Hasil biasa"), { status: 400 });
+      }
+
+      // Kalau match ini bagian dari sistem gugur (Bracket, atau babak Knockout di Setengah
+      // Kompetisi) dan babak berikutnya SUDAH ada hasilnya, tolak koreksi -- harus koreksi/
+      // hapus dulu hasil di babak berikutnya, baru boleh koreksi match ini, supaya rating
+      // tidak jadi berantakan (efek berantai lintas babak).
+      const isEliminationStage = tm.stage === "knockout" || (tm.stage === "main" && tournament.format === "bracket");
+      let nextMatch = null;
+      if (isEliminationStage) {
+        nextMatch = await tx.tournamentMatch.findFirst({
+          where: { tournamentId, stage: tm.stage, round: tm.round + 1, matchIndex: Math.floor(tm.matchIndex / 2) },
+        });
+        if (nextMatch && nextMatch.status !== "pending") {
+          throw Object.assign(new Error("Match babak berikutnya sudah punya hasil. Koreksi/hapus dulu hasil di babak berikutnya, baru koreksi match ini."), { status: 409 });
+        }
+      }
+
+      // Balikkan dampak rating dari hasil lama (pola sama seperti DELETE /admin/matches/:id)
+      if (tm.singleMatchId) {
+        const match = await tx.match.findUnique({ where: { id: tm.singleMatchId } });
+        if (match && match.ratingWinnerAfter != null) {
+          const winnerDelta = Number(match.ratingWinnerAfter) - Number(match.ratingWinnerBefore);
+          const loserDelta = Number(match.ratingLoserAfter) - Number(match.ratingLoserBefore);
+          await tx.player.update({ where: { id: match.winnerId }, data: { currentRating: { decrement: winnerDelta }, matchesPlayed: { decrement: 1 } } });
+          await tx.player.update({ where: { id: match.loserId }, data: { currentRating: { decrement: loserDelta }, matchesPlayed: { decrement: 1 } } });
+          await tx.ratingHistory.deleteMany({ where: { matchId: tm.singleMatchId } });
+        }
+        await tx.match.delete({ where: { id: tm.singleMatchId } });
+      } else if (tm.doublesMatchId) {
+        const dm = await tx.doublesMatch.findUnique({ where: { id: tm.doublesMatchId } });
+        if (dm && dm.t1p1RatingAfter != null) {
+          const deltas = [
+            { playerId: dm.team1Player1Id, before: dm.t1p1RatingBefore, after: dm.t1p1RatingAfter },
+            { playerId: dm.team1Player2Id, before: dm.t1p2RatingBefore, after: dm.t1p2RatingAfter },
+            { playerId: dm.team2Player1Id, before: dm.t2p1RatingBefore, after: dm.t2p1RatingAfter },
+            { playerId: dm.team2Player2Id, before: dm.t2p2RatingBefore, after: dm.t2p2RatingAfter },
+          ];
+          for (const d of deltas) {
+            const delta = Number(d.after) - Number(d.before);
+            await tx.player.update({ where: { id: d.playerId }, data: { doublesRating: { decrement: delta }, doublesMatchesPlayed: { decrement: 1 } } });
+          }
+          await tx.doublesRatingHistory.deleteMany({ where: { matchId: tm.doublesMatchId } });
+        }
+        await tx.doublesMatch.delete({ where: { id: tm.doublesMatchId } });
+      }
+
+      // Kosongkan match ini jadi pending lagi, lepas juga slot pemenang di babak
+      // berikutnya (kalau ada) supaya bisa diisi ulang dengan pemenang yang benar
+      await tx.tournamentMatch.update({
+        where: { id: tmId },
+        data: { winnerParticipantId: null, singleMatchId: null, doublesMatchId: null, status: "pending" },
+      });
+      if (nextMatch) {
+        const slotField = tm.matchIndex % 2 === 0 ? "participant1Id" : "participant2Id";
+        await tx.tournamentMatch.update({ where: { id: nextMatch.id }, data: { [slotField]: null } });
+      }
+
+      // Turnamen mungkin sempat ditandai "completed" -- buka lagi karena match ini
+      // sekarang pending, biar konsisten dengan status match-nya
+      await tx.tournament.update({ where: { id: tournamentId }, data: { status: "ongoing", completedAt: null } });
+
+      // Input ulang hasil yang benar, pakai logika perhitungan ELO & auto-advance yang
+      // PERSIS SAMA dengan submit biasa
+      return submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, loserGames, targetGames, submittedBy: req.playerId });
+    });
+
+    res.json({ message: "Hasil match berhasil dikoreksi, rating sudah disesuaikan ulang.", elo: result });
+  } catch (e) {
+    const status = e.status || 500;
+    res.status(status).json({ error: { code: "CORRECT_FAILED", message: e.message } });
   }
 });
 
