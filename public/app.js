@@ -1069,8 +1069,7 @@ async function renderAdmin(container) {
     const list = wrap.querySelector("#pending-players-list");
     if (players.length === 0) {
       list.innerHTML = `<p class="muted">Tidak ada pendaftar yang menunggu persetujuan.</p>`;
-      return;
-    }
+    } else {
     list.innerHTML = "";
     players.forEach((p) => {
       const item = el(`
@@ -1101,8 +1100,53 @@ async function renderAdmin(container) {
       });
       list.appendChild(item);
     });
+    }
   } catch (err) {
     wrap.querySelector("#pending-players-list").innerHTML = `<p class="error">${err.message}</p>`;
+  }
+
+  const nameChangeApprovalWrap = el(`<div class="card"><h2>Persetujuan Ganti Nama</h2><div id="pending-name-changes-list">Memuat...</div></div>`);
+  container.appendChild(nameChangeApprovalWrap);
+  try {
+    const { players } = await api("/admin/pending-name-changes");
+    const list = nameChangeApprovalWrap.querySelector("#pending-name-changes-list");
+    if (players.length === 0) {
+      list.innerHTML = `<p class="muted">Tidak ada pengajuan ganti nama.</p>`;
+    } else {
+      list.innerHTML = "";
+      players.forEach((p) => {
+        const item = el(`
+          <div class="row" style="flex-direction:column; align-items:stretch; gap:6px;">
+            <div><strong>${p.name}</strong> &rarr; <strong>${p.pendingName}</strong> (${p.email})</div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn" style="margin-top:0" data-action="approve-name" data-id="${p.id}">Setujui</button>
+              <button class="btn danger" style="margin-top:0" data-action="reject-name" data-id="${p.id}">Tolak</button>
+            </div>
+          </div>
+        `);
+        item.querySelector('[data-action="approve-name"]').addEventListener("click", async () => {
+          try {
+            const data = await api(`/admin/approve-name-change/${p.id}`, { method: "POST" });
+            alert(data.message);
+            render();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        item.querySelector('[data-action="reject-name"]').addEventListener("click", async () => {
+          try {
+            const data = await api(`/admin/reject-name-change/${p.id}`, { method: "POST" });
+            alert(data.message);
+            render();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        list.appendChild(item);
+      });
+    }
+  } catch (err) {
+    nameChangeApprovalWrap.querySelector("#pending-name-changes-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
 
   const bannedWrap = el(`<div class="card"><h2>Akun Diblokir (Tidak Merespon 5x+)</h2><div id="banned-players-list">Memuat...</div></div>`);
@@ -1566,6 +1610,48 @@ async function renderProfile(container) {
   `);
   container.appendChild(wrap);
   wrap.querySelector("#logout-btn").addEventListener("click", logout);
+
+  const nameChangeWrap = el(`
+    <div class="card">
+      <h2>Ganti Nama</h2>
+      <div id="name-change-status"></div>
+      <label>Nama baru</label>
+      <input id="new-name-input" type="text" placeholder="Ketik nama baru..." />
+      <div id="name-change-error" class="error" style="display:none"></div>
+      <button id="request-name-change-btn" class="btn secondary">Ajukan Perubahan Nama</button>
+    </div>
+  `);
+  container.appendChild(nameChangeWrap);
+  try {
+    const { player } = await api(`/players/${state.player.id}`);
+    if (player.pendingName) {
+      nameChangeWrap.querySelector("#name-change-status").innerHTML =
+        `<p class="muted" style="font-size:13px;background:#fff3cd;padding:0.5rem;border-radius:8px">Menunggu persetujuan admin: <strong>${player.pendingName}</strong></p>`;
+    }
+  } catch (err) {
+    // biarkan saja, tidak fatal kalau gagal cek status pending
+  }
+  nameChangeWrap.querySelector("#request-name-change-btn").addEventListener("click", async () => {
+    const newName = nameChangeWrap.querySelector("#new-name-input").value.trim();
+    const errorEl = nameChangeWrap.querySelector("#name-change-error");
+    errorEl.style.display = "none";
+    if (!newName) {
+      errorEl.textContent = "Nama baru wajib diisi";
+      errorEl.style.display = "block";
+      return;
+    }
+    try {
+      const data = await api("/players/me/request-name-change", {
+        method: "POST",
+        body: JSON.stringify({ newName }),
+      });
+      alert(data.message);
+      render();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+  });
 
   const notifWrap = el(`
     <div class="card">
