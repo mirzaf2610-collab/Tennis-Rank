@@ -444,17 +444,22 @@ async function renderLeaderboard(container) {
       })
       .join("");
 
+    const TRACK_HEIGHT = 180;
     let sliderHtml = "";
     if (maxStart > 0) {
       const rangeStart = currentStart + 1;
       const rangeEnd = Math.min(currentStart + PAGE_SIZE, fullLeaderboard.length);
+      const thumbRatio = Math.min(1, PAGE_SIZE / fullLeaderboard.length);
+      const thumbHeight = Math.max(24, Math.round(TRACK_HEIGHT * thumbRatio));
+      const thumbTop = Math.round((currentStart / maxStart) * (TRACK_HEIGHT - thumbHeight));
       sliderHtml = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
-          <span class="muted" style="font-size:10px">1</span>
-          <input type="range" id="lb-page-slider" min="0" max="${maxStart}" step="1" value="${currentStart}"
-            style="writing-mode:vertical-lr;direction:rtl;width:8px;height:160px;accent-color:#1a1a1a" />
-          <span class="muted" style="font-size:10px">${fullLeaderboard.length}</span>
-          <span class="muted" style="font-size:11px;white-space:nowrap;writing-mode:vertical-lr">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;user-select:none">
+          <button id="lb-scroll-up" type="button" style="border:none;background:none;color:#888;cursor:pointer;padding:2px;font-size:10px;line-height:1">▲</button>
+          <div id="lb-scroll-track" style="position:relative;width:14px;height:${TRACK_HEIGHT}px;background:#e6e6e6;border-radius:7px;touch-action:none">
+            <div id="lb-scroll-thumb" style="position:absolute;left:1px;width:12px;height:${thumbHeight}px;top:${thumbTop}px;background:#9a9a9a;border-radius:6px;cursor:grab"></div>
+          </div>
+          <button id="lb-scroll-down" type="button" style="border:none;background:none;color:#888;cursor:pointer;padding:2px;font-size:10px;line-height:1">▼</button>
+          <span class="muted" style="font-size:11px;white-space:nowrap;writing-mode:vertical-lr;margin-top:2px">
             ${rangeStart}-${rangeEnd} / ${fullLeaderboard.length}
           </span>
         </div>`;
@@ -474,9 +479,78 @@ async function renderLeaderboard(container) {
       </div>`;
 
     if (maxStart > 0) {
-      const slider = list.querySelector("#lb-page-slider");
-      slider.addEventListener("input", () => {
-        currentStart = Number(slider.value);
+      const track = list.querySelector("#lb-scroll-track");
+      const thumb = list.querySelector("#lb-scroll-thumb");
+      const thumbH = thumb.offsetHeight;
+      const travel = TRACK_HEIGHT - thumbH;
+
+      const setStartFromDelta = (deltaPx) => {
+        const deltaRatio = travel > 0 ? deltaPx / travel : 0;
+        const newStart = Math.round(dragStartValue + deltaRatio * maxStart);
+        const clamped = Math.min(Math.max(0, newStart), maxStart);
+        if (clamped !== currentStart) {
+          currentStart = clamped;
+          renderPage();
+        }
+      };
+
+      let dragging = false;
+      let dragStartY = 0;
+      let dragStartValue = currentStart;
+
+      const onMove = (clientY) => {
+        setStartFromDelta(clientY - dragStartY);
+      };
+      const onMouseMove = (e) => onMove(e.clientY);
+      const onTouchMove = (e) => {
+        if (e.touches && e.touches[0]) {
+          e.preventDefault();
+          onMove(e.touches[0].clientY);
+        }
+      };
+      const stopDrag = () => {
+        dragging = false;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", stopDrag);
+        document.removeEventListener("touchmove", onTouchMove);
+        document.removeEventListener("touchend", stopDrag);
+      };
+      const startDrag = (clientY) => {
+        dragging = true;
+        dragStartY = clientY;
+        dragStartValue = currentStart;
+      };
+
+      thumb.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        startDrag(e.clientY);
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", stopDrag);
+      });
+      thumb.addEventListener("touchstart", (e) => {
+        if (e.touches && e.touches[0]) {
+          startDrag(e.touches[0].clientY);
+          document.addEventListener("touchmove", onTouchMove, { passive: false });
+          document.addEventListener("touchend", stopDrag);
+        }
+      });
+
+      // Klik langsung di track (bukan di thumb) -> lompat ke posisi tsb
+      track.addEventListener("mousedown", (e) => {
+        if (e.target === thumb) return;
+        const rect = track.getBoundingClientRect();
+        const clickTop = e.clientY - rect.top - thumbH / 2;
+        const ratio = travel > 0 ? Math.min(Math.max(0, clickTop), travel) / travel : 0;
+        currentStart = Math.min(Math.max(0, Math.round(ratio * maxStart)), maxStart);
+        renderPage();
+      });
+
+      list.querySelector("#lb-scroll-up").addEventListener("click", () => {
+        currentStart = Math.max(0, currentStart - 1);
+        renderPage();
+      });
+      list.querySelector("#lb-scroll-down").addEventListener("click", () => {
+        currentStart = Math.min(maxStart, currentStart + 1);
         renderPage();
       });
     }
