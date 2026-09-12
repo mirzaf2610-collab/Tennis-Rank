@@ -1366,7 +1366,7 @@ async function renderTournaments(container) {
 
 // Bangun HTML diagram bracket visual (kolom per babak, gap membesar 2x tiap babak
 // biar kelihatan efek "corong" khas bagan turnamen, bisa di-scroll ke samping di HP)
-function buildBracketDiagramHtml(matches, isAdmin) {
+function buildBracketDiagramHtml(matches, isAdmin, allowParticipantSubmit = false, currentPlayerId = null) {
   const numRounds = matches.length ? Math.max(...matches.map((m) => m.round)) : 0;
   let html = `<div style="overflow-x:auto"><div style="display:flex;gap:28px;padding:1rem 0.25rem;min-width:max-content">`;
   for (let r = 1; r <= numRounds; r++) {
@@ -1384,8 +1384,15 @@ function buildBracketDiagramHtml(matches, isAdmin) {
         <div style="padding:6px 8px;${p2Won ? "font-weight:700;background:#f4f4f2" : ""}">${p2}</div>
         ${m.score ? `<div style="padding:3px 8px;font-size:11px;color:#777;text-align:center;background:#fafafa;border-top:1px solid #eee">${m.score}</div>` : ""}
       </div>`;
-      if (isAdmin && m.status === "pending" && m.participant1 && m.participant2) {
+      const isMatchParticipant = allowParticipantSubmit && currentPlayerId != null && (
+        (m.team1PlayerIds || []).includes(currentPlayerId) || (m.team2PlayerIds || []).includes(currentPlayerId)
+      );
+      const canSubmit = (isAdmin || isMatchParticipant) && m.status === "pending" && m.participant1 && m.participant2;
+      const canCorrect = isAdmin && m.status === "completed" && m.participant1 && m.participant2;
+      if (canSubmit) {
         html += `<button class="btn secondary" style="margin-top:2px;font-size:11px;padding:4px" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>`;
+      } else if (canCorrect) {
+        html += `<button class="btn secondary" style="margin-top:2px;font-size:10px;padding:3px;color:#c62828" data-correct-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">✏️ Koreksi</button>`;
       }
     });
     html += `</div>`;
@@ -1394,8 +1401,10 @@ function buildBracketDiagramHtml(matches, isAdmin) {
   return html;
 }
 
-// Daftar match datar (buat Round Robin & fase grup) -- tanpa diagram, cuma list biasa
-function buildMatchListHtml(matches, isAdmin) {
+// Daftar match datar (buat Round Robin & fase grup) -- tanpa diagram, cuma list biasa.
+// allowParticipantSubmit + currentPlayerId: khusus dipakai buat Sistem Cappuccino, supaya
+// pemain yang tampil di match tsb (bukan cuma admin) juga bisa input hasilnya sendiri.
+function buildMatchListHtml(matches, isAdmin, allowParticipantSubmit = false, currentPlayerId = null) {
   let html = "";
   matches.forEach((m) => {
     const p1 = m.participant1 ? m.participant1.label : "?";
@@ -1403,11 +1412,17 @@ function buildMatchListHtml(matches, isAdmin) {
     let resultText = m.status === "completed" || m.status === "bye"
       ? `<strong>${m.winner ? m.winner.label : "-"}</strong> menang${m.score ? ` (${m.score})` : ""}`
       : `<span class="muted">Belum main</span>`;
+    const isMatchParticipant = allowParticipantSubmit && currentPlayerId != null && (
+      (m.team1PlayerIds || []).includes(currentPlayerId) || (m.team2PlayerIds || []).includes(currentPlayerId)
+    );
+    const canSubmit = (isAdmin || isMatchParticipant) && m.status === "pending" && m.participant1 && m.participant2;
+    const canCorrect = isAdmin && m.status === "completed" && m.participant1 && m.participant2;
     html += `<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
       <div style="display:flex;justify-content:space-between">
         <span>${p1} vs ${p2}</span><span>${resultText}</span>
       </div>
-      ${isAdmin && m.status === "pending" && m.participant1 && m.participant2 ? `<button class="btn secondary" style="margin-top:0" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>` : ""}
+      ${canSubmit ? `<button class="btn secondary" style="margin-top:0" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>` : ""}
+      ${canCorrect ? `<button class="btn secondary" style="margin-top:0;font-size:11px;padding:4px;color:#c62828" data-correct-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">✏️ Koreksi Hasil</button>` : ""}
     </div>`;
   });
   return html;
@@ -1442,6 +1457,38 @@ function wireSubmitButtons(detail, tId, render) {
       }
     });
   });
+
+  // Tombol koreksi (admin) buat match yang sudah completed tapi salah input --
+  // membalikkan dulu dampak rating hasil lama, baru simpan hasil yang baru
+  detail.querySelectorAll("[data-correct-tm]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tmId = btn.dataset.correctTm;
+      const p1Id = Number(btn.dataset.p1);
+      const p2Id = Number(btn.dataset.p2);
+      const p1Name = btn.dataset.p1name;
+      const p2Name = btn.dataset.p2name;
+      if (!confirm(`Koreksi hasil match ${p1Name} vs ${p2Name}?\n\nRating yang sudah terlanjur berubah dari hasil lama akan dikembalikan dulu, baru dihitung ulang pakai hasil yang baru.`)) return;
+      const winnerChoice = prompt(`Siapa yang SEHARUSNYA menang?\n1 = ${p1Name}\n2 = ${p2Name}`);
+      if (winnerChoice !== "1" && winnerChoice !== "2") return;
+      const loserGamesStr = prompt("Game yang didapat pihak kalah yang benar (0-5)?");
+      const loserGames = Number(loserGamesStr);
+      if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > 5) {
+        alert("Skor tidak valid");
+        return;
+      }
+      const winnerId = winnerChoice === "1" ? p1Id : p2Id;
+      try {
+        const data = await api(`/admin/tournaments/${tId}/matches/${tmId}/correct`, {
+          method: "POST",
+          body: JSON.stringify({ winnerId, loserGames, targetGames: 6 }),
+        });
+        alert(data.message);
+        render();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 }
 
 async function renderTournamentDetail(container) {
@@ -1462,6 +1509,7 @@ async function renderTournamentDetail(container) {
   try {
     const { tournament, matches, standings, groups, knockoutMatches, canStartKnockout, cappuccinoRounds, cappuccinoRanking } = await api(`/tournaments/${tId}`);
     const isAdmin = state.player && state.player.isAdmin;
+    const currentPlayerId = state.player ? state.player.id : null;
     const detail = wrap.querySelector("#tournament-detail");
 
     const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)", cappuccino: "Sistem Cappuccino" }[tournament.format];
@@ -1474,21 +1522,21 @@ async function renderTournamentDetail(container) {
       standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.gameDiff >= 0 ? "+" : ""}${s.gameDiff}</td></tr>`; });
       html += `</tbody></table>`;
       html += `<h3 style="margin-top:1rem;font-size:15px">Pertandingan</h3>`;
-      html += buildMatchListHtml(matches, isAdmin);
+      html += buildMatchListHtml(matches, isAdmin, true, currentPlayerId);
     } else if (tournament.format === "bracket") {
       html += `<h3 style="margin-top:1rem;font-size:15px">Bagan Turnamen</h3>`;
-      html += buildBracketDiagramHtml(matches, isAdmin);
+      html += buildBracketDiagramHtml(matches, isAdmin, true, currentPlayerId);
     } else if (tournament.format === "group_knockout") {
       groups.forEach((g) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Grup ${g.groupNumber}</h3>`;
         html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th><th>Sel. Game</th></tr></thead><tbody>`;
         g.standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.gameDiff >= 0 ? "+" : ""}${s.gameDiff}</td></tr>`; });
         html += `</tbody></table>`;
-        html += buildMatchListHtml(g.matches, isAdmin);
+        html += buildMatchListHtml(g.matches, isAdmin, true, currentPlayerId);
       });
       if (knockoutMatches) {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">🏆 Babak Knockout</h3>`;
-        html += buildBracketDiagramHtml(knockoutMatches, isAdmin);
+        html += buildBracketDiagramHtml(knockoutMatches, isAdmin, true, currentPlayerId);
       }
     } else if (tournament.format === "cappuccino") {
       html += `<h3 style="margin-top:1rem;font-size:15px">☕ Peringkat Individu</h3>`;
@@ -1497,7 +1545,7 @@ async function renderTournamentDetail(container) {
       html += `</tbody></table>`;
       cappuccinoRounds.forEach((rd) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Ronde ${rd.round}</h3>`;
-        html += buildMatchListHtml(rd.matches, isAdmin);
+        html += buildMatchListHtml(rd.matches, isAdmin, true, currentPlayerId);
       });
     }
 
