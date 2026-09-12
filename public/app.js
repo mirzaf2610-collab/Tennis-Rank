@@ -450,24 +450,29 @@ async function renderLeaderboard(container) {
       const rangeStart = start + 1;
       const rangeEnd = Math.min(start + PAGE_SIZE, fullLeaderboard.length);
       sliderHtml = `
-        <div style="margin-top:0.75rem">
-          <div class="muted" style="font-size:12px;text-align:center;margin-bottom:4px">
-            Peringkat ${rangeStart}-${rangeEnd} dari ${fullLeaderboard.length}
-          </div>
-          <input type="range" id="lb-page-slider" min="0" max="${totalPages - 1}" step="1" value="${currentPage}" style="width:100%" />
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
+          <span class="muted" style="font-size:10px">1</span>
+          <input type="range" id="lb-page-slider" min="0" max="${totalPages - 1}" step="1" value="${currentPage}"
+            style="writing-mode:vertical-lr;direction:rtl;width:8px;height:160px;accent-color:#1a1a1a" />
+          <span class="muted" style="font-size:10px">${totalPages}</span>
+          <span class="muted" style="font-size:11px;white-space:nowrap;writing-mode:vertical-lr">
+            ${rangeStart}-${rangeEnd} / ${fullLeaderboard.length}
+          </span>
         </div>`;
     }
 
     list.innerHTML = `
-      <div style="overflow-x:auto">
-        <table class="lb-table">
-          <thead>
-            <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      ${sliderHtml}`;
+      <div style="display:flex;gap:0.75rem;align-items:flex-start">
+        <div style="overflow-x:auto;flex:1">
+          <table class="lb-table">
+            <thead>
+              <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        ${sliderHtml}
+      </div>`;
 
     if (totalPages > 1) {
       const slider = list.querySelector("#lb-page-slider");
