@@ -407,7 +407,7 @@ async function renderLeaderboard(container) {
   let currentMode = "double";
   const PAGE_SIZE = 10;
   let fullLeaderboard = [];
-  let currentPage = 0; // 0-indexed
+  let currentStart = 0; // row index (0-indexed) of the first visible row
 
   function renderPage() {
     const list = wrap.querySelector("#lb-list");
@@ -417,10 +417,9 @@ async function renderLeaderboard(container) {
       return;
     }
     const maxMatches = Math.max(...fullLeaderboard.map((p) => p.matchesPlayed));
-    const totalPages = Math.ceil(fullLeaderboard.length / PAGE_SIZE);
-    currentPage = Math.min(currentPage, totalPages - 1);
-    const start = currentPage * PAGE_SIZE;
-    const pageItems = fullLeaderboard.slice(start, start + PAGE_SIZE);
+    const maxStart = Math.max(0, fullLeaderboard.length - PAGE_SIZE);
+    currentStart = Math.min(Math.max(0, currentStart), maxStart);
+    const pageItems = fullLeaderboard.slice(currentStart, currentStart + PAGE_SIZE);
 
     const rows = pageItems
       .map((p) => {
@@ -446,15 +445,15 @@ async function renderLeaderboard(container) {
       .join("");
 
     let sliderHtml = "";
-    if (totalPages > 1) {
-      const rangeStart = start + 1;
-      const rangeEnd = Math.min(start + PAGE_SIZE, fullLeaderboard.length);
+    if (maxStart > 0) {
+      const rangeStart = currentStart + 1;
+      const rangeEnd = Math.min(currentStart + PAGE_SIZE, fullLeaderboard.length);
       sliderHtml = `
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
           <span class="muted" style="font-size:10px">1</span>
-          <input type="range" id="lb-page-slider" min="0" max="${totalPages - 1}" step="1" value="${currentPage}"
+          <input type="range" id="lb-page-slider" min="0" max="${maxStart}" step="1" value="${currentStart}"
             style="writing-mode:vertical-lr;direction:rtl;width:8px;height:160px;accent-color:#1a1a1a" />
-          <span class="muted" style="font-size:10px">${totalPages}</span>
+          <span class="muted" style="font-size:10px">${fullLeaderboard.length}</span>
           <span class="muted" style="font-size:11px;white-space:nowrap;writing-mode:vertical-lr">
             ${rangeStart}-${rangeEnd} / ${fullLeaderboard.length}
           </span>
@@ -474,10 +473,10 @@ async function renderLeaderboard(container) {
         ${sliderHtml}
       </div>`;
 
-    if (totalPages > 1) {
+    if (maxStart > 0) {
       const slider = list.querySelector("#lb-page-slider");
       slider.addEventListener("input", () => {
-        currentPage = Number(slider.value);
+        currentStart = Number(slider.value);
         renderPage();
       });
     }
@@ -490,7 +489,7 @@ async function renderLeaderboard(container) {
     const seasonSelect = wrap.querySelector("#season-select");
     const seasonId = seasonSelect.value;
     const selectedSeason = seasons.find((s) => String(s.id) === String(seasonId));
-    currentPage = 0;
+    currentStart = 0;
     try {
       let leaderboard;
       if (selectedSeason && !selectedSeason.isActive) {
