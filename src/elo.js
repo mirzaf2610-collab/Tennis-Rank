@@ -6,7 +6,7 @@
 // DOUBLES: tetap format tetap (first-to-6), tidak ada opsi format.
 
 const MIN_MATCHES_LEADERBOARD_SINGLES = 1;
-const MIN_MATCHES_LEADERBOARD_DOUBLES = 3;
+const MIN_MATCHES_LEADERBOARD_DOUBLES = 2;
 const PROVISIONAL_THRESHOLD = 10;
 const K_PROVISIONAL = 32;
 const K_STABLE = 20;
