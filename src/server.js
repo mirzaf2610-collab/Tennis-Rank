@@ -2,7 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { PrismaClient } = require("@prisma/client");
 
 const authRoutes = require("./routes/auth");
 const playerRoutes = require("./routes/players");
@@ -52,7 +51,7 @@ async function markNoResponse(tx, playerId) {
 // Auto-confirm match yang statusnya masih "pending" lebih dari 3 hari (misal lawan tidak
 // pernah konfirmasi). Yang menang tetap dapat poin, tapi cuma SETENGAH dari perhitungan normal.
 // Pihak yang tidak merespon dicatat "tidak konfirmasi"-nya, dan di-ban otomatis kalau sudah 5x.
-const prismaForAutoConfirm = new PrismaClient();
+const prismaForAutoConfirm = require("./db");
 async function autoConfirmAbandonedMatches() {
   const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
   try {
