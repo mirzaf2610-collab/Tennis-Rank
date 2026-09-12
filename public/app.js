@@ -426,7 +426,7 @@ async function renderLeaderboard(container) {
         leaderboard = data.leaderboard;
       }
       if (leaderboard.length === 0) {
-        const minText = currentMode === "double" ? "minimal 3 match" : "minimal 1 match";
+        const minText = currentMode === "double" ? "minimal 2 match" : "minimal 1 match";
         list.innerHTML = `<p class="muted">Belum ada pemain dengan ${minText}.</p>`;
       } else {
         const maxMatches = Math.max(...leaderboard.map((p) => p.matchesPlayed));
@@ -1467,19 +1467,19 @@ async function renderRules(container) {
         <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak) sebelum rating berubah.<br/>
         <strong>Ganda:</strong> cukup 1 wakil dari tiap tim yang konfirmasi (total 2 orang, bebas siapa saja).<br/><br/>
         Kalau ditolak salah satu pihak, match otomatis dibatalkan (tidak mempengaruhi rating). Submit ulang kalau perlu dicatat lagi.<br/><br/>
-        Kalau tidak direspon sama sekali dalam <strong>7 hari</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
+        Kalau tidak direspon sama sekali dalam <strong>3 hari</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
         tapi poinnya cuma <strong>setengah</strong> dari perhitungan normal.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
-        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 7 hari, tercatat 1x "tidak konfirmasi" di profil Anda
+        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 3 hari, tercatat 1x "tidak konfirmasi" di profil Anda
         (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis diblokir dan hanya bisa dibuka kembali oleh admin.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
       <p style="font-size:16px;line-height:1.7">
-        Single: minimal sudah main 1 kali baru muncul di papan ranking. Ganda: minimal 3 kali.
+        Single: minimal sudah main 1 kali baru muncul di papan ranking. Ganda: minimal 2 kali.
         Bisa diurutkan berdasarkan Poin, Jumlah Main, atau Win Rate.
       </p>
 
