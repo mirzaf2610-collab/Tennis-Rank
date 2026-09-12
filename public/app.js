@@ -467,7 +467,7 @@ async function renderLeaderboard(container) {
 
     list.innerHTML = `
       <div style="display:flex;gap:0.75rem;align-items:flex-start">
-        <div style="overflow-x:auto;flex:1">
+        <div id="lb-table-wrap" style="overflow-x:auto;flex:1">
           <table class="lb-table">
             <thead>
               <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
@@ -582,6 +582,63 @@ async function renderLeaderboard(container) {
       list.innerHTML = `<p class="error">${err.message}</p>`;
     }
   }
+
+  // Swipe vertikal pakai jari di area tabel untuk geser peringkat (dipasang sekali
+  // di container #lb-list yang persisten, karena isinya diganti tiap renderPage()
+  // tapi elemen container-nya sendiri tidak pernah dibuat ulang).
+  (function attachTableSwipe() {
+    const list = wrap.querySelector("#lb-list");
+    const ROW_PX = 44; // perkiraan tinggi 1 baris, dipakai untuk konversi jarak swipe -> jumlah baris
+    let touchStartX = 0, touchStartY = 0, touchStartVal = 0, decided = null;
+
+    list.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!e.touches || !e.touches[0]) return;
+        const target = e.target;
+        const onControl = target.closest && target.closest("#lb-scroll-track, #lb-scroll-up, #lb-scroll-down");
+        const maxStartNow = Math.max(0, fullLeaderboard.length - PAGE_SIZE);
+        if (onControl || maxStartNow <= 0) {
+          decided = "ignore";
+          return;
+        }
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchStartVal = currentStart;
+        decided = null;
+      },
+      { passive: true }
+    );
+
+    list.addEventListener(
+      "touchmove",
+      (e) => {
+        if (decided === "ignore") return;
+        if (!e.touches || !e.touches[0]) return;
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        if (decided === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+          decided = Math.abs(dy) > Math.abs(dx) ? "y" : "x";
+        }
+        if (decided === "y") {
+          e.preventDefault(); // cegah scroll halaman ikut geser saat swipe vertikal di tabel
+          const maxStartNow = Math.max(0, fullLeaderboard.length - PAGE_SIZE);
+          const deltaRows = Math.round(-dy / ROW_PX);
+          const newStart = Math.min(Math.max(0, touchStartVal + deltaRows), maxStartNow);
+          if (newStart !== currentStart) {
+            currentStart = newStart;
+            renderPage();
+          }
+        }
+        // decided === "x" -> biarkan scroll horizontal bawaan (overflow-x:auto) jalan seperti biasa
+      },
+      { passive: false }
+    );
+
+    list.addEventListener("touchend", () => {
+      decided = null;
+    });
+  })();
 
   wrap.querySelectorAll("[data-mode]").forEach((b) => {
     b.addEventListener("click", () => {
