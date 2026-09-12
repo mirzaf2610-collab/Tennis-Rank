@@ -1,11 +1,10 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { calculateElo, getKFactor, PROVISIONAL_THRESHOLD, isValidTargetGames, DEFAULT_TARGET_GAMES, MIN_TARGET_GAMES, MAX_TARGET_GAMES } = require("../elo");
 const { sendPushToPlayer } = require("../pushService");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 // POST /api/matches - submit hasil pertandingan
 // submittedBy diambil dari token (req.playerId), bukan dari body.
@@ -284,6 +283,7 @@ router.get("/matches", async (req, res) => {
     loser: m.loser.name,
     score: `${m.targetGames}-${m.loserGames}`,
     status: m.status,
+    rejectReason: m.rejectReason,
     ratingWinnerChange: m.ratingWinnerAfter && m.ratingWinnerBefore
       ? Number(m.ratingWinnerAfter) - Number(m.ratingWinnerBefore) : null,
     ratingLoserChange: m.ratingLoserAfter && m.ratingLoserBefore

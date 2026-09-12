@@ -1,12 +1,11 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_DOUBLES } = require("../elo");
 const { computeDoublesStats, buildBadges } = require("../achievements");
 const { sendPushToPlayer } = require("../pushService");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 // GET /api/doubles/leaderboard - sortBy: rating (default), matches, winrate
 router.get("/doubles/leaderboard", async (req, res) => {

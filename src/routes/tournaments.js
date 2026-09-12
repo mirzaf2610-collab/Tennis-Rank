@@ -1,10 +1,9 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { calculateElo, calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, DEFAULT_TARGET_GAMES } = require("../elo");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 async function requireAdmin(req, res, next) {
   const player = await prisma.player.findUnique({ where: { id: req.playerId } });

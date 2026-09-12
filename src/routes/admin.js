@@ -1,9 +1,8 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 // Middleware: hanya admin yang boleh lewat
 async function requireAdmin(req, res, next) {

@@ -1,13 +1,12 @@
 const express = require("express");
 const multer = require("multer");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { MIN_MATCHES_LEADERBOARD_SINGLES } = require("../elo");
 const { uploadAvatar } = require("../supabaseStorage");
 const { computeSinglesStats, computeDoublesStats, buildBadges } = require("../achievements");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 const upload = multer({
   storage: multer.memoryStorage(),

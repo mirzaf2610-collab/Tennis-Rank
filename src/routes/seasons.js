@@ -1,11 +1,10 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { computeSinglesStats, computeDoublesStats, buildBadges } = require("../achievements");
 const { PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_SINGLES, MIN_MATCHES_LEADERBOARD_DOUBLES } = require("../elo");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 async function requireAdmin(req, res, next) {
   const player = await prisma.player.findUnique({ where: { id: req.playerId } });

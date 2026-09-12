@@ -1,9 +1,8 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = require("../db");
 
 // GET /api/push/vapid-public-key - frontend butuh ini untuk subscribe
 router.get("/push/vapid-public-key", (req, res) => {
