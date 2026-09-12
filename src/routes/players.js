@@ -66,6 +66,56 @@ router.get("/recent-matches", async (req, res) => {
   res.json({ matches: merged });
 });
 
+// GET /api/pending-matches - match single+ganda yang MASIH menunggu konfirmasi (belum
+// masuk hitungan rating), publik tanpa login. Sekadar pengingat di halaman Ranking
+// supaya semua orang tahu ada hasil yang belum dikonfirmasi -- BUKAN buat konfirmasi
+// langsung dari sini (konfirmasi tetap lewat halaman "Menunggu Konfirmasi" masing-masing).
+router.get("/pending-matches", async (req, res) => {
+  const [singles, doubles] = await Promise.all([
+    prisma.match.findMany({
+      where: { status: "pending" },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+      include: { winner: true, loser: true },
+    }),
+    prisma.doublesMatch.findMany({
+      where: { status: "pending" },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+      include: { team1Player1: true, team1Player2: true, team2Player1: true, team2Player2: true },
+    }),
+  ]);
+
+  const singleItems = singles.map((m) => ({
+    type: "single",
+    createdAt: m.createdAt,
+    // Ini klaim dari yang input, belum tentu final -- makanya masih "menunggu konfirmasi"
+    claimedWinnerText: m.winner.name,
+    claimedLoserText: m.loser.name,
+    score: `${m.targetGames}-${m.loserGames}`,
+  }));
+
+  const doubleItems = doubles.map((m) => {
+    const team1 = `${m.team1Player1.name}/${m.team1Player2.name}`;
+    const team2 = `${m.team2Player1.name}/${m.team2Player2.name}`;
+    const claimedWinnerText = m.winningTeam === 1 ? team1 : team2;
+    const claimedLoserText = m.winningTeam === 1 ? team2 : team1;
+    return {
+      type: "double",
+      createdAt: m.createdAt,
+      claimedWinnerText,
+      claimedLoserText,
+      score: `6-${m.loserGames}`,
+    };
+  });
+
+  const merged = [...singleItems, ...doubleItems]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 15);
+
+  res.json({ matches: merged });
+});
+
 // GET /api/leaderboard - min 3 match. sortBy: rating (default), matches, winrate
 router.get("/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
