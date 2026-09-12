@@ -406,8 +406,8 @@ async function renderLeaderboard(container) {
 
   let currentMode = "double";
   const PAGE_SIZE = 10;
+  const TRACK_HEIGHT = 180;
   let fullLeaderboard = [];
-  let currentStart = 0; // row index (0-indexed) of the first visible row
 
   function renderPage() {
     const list = wrap.querySelector("#lb-list");
@@ -417,11 +417,10 @@ async function renderLeaderboard(container) {
       return;
     }
     const maxMatches = Math.max(...fullLeaderboard.map((p) => p.matchesPlayed));
-    const maxStart = Math.max(0, fullLeaderboard.length - PAGE_SIZE);
-    currentStart = Math.min(Math.max(0, currentStart), maxStart);
-    const pageItems = fullLeaderboard.slice(currentStart, currentStart + PAGE_SIZE);
 
-    const rows = pageItems
+    // Render SEMUA baris (tidak di-slice) -> body-nya di-scroll native oleh browser,
+    // persis seperti scroll horizontal yang sudah smooth, bukan lompat per baris.
+    const rows = fullLeaderboard
       .map((p) => {
         const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
         if (p.matchesPlayed === maxMatches && p.matchesPlayed > 15) badgeTexts.push(`⚡ Antu Lapangan`);
@@ -444,116 +443,123 @@ async function renderLeaderboard(container) {
       })
       .join("");
 
-    const TRACK_HEIGHT = 180;
-    let sliderHtml = "";
-    if (maxStart > 0) {
-      const rangeStart = currentStart + 1;
-      const rangeEnd = Math.min(currentStart + PAGE_SIZE, fullLeaderboard.length);
-      const thumbRatio = Math.min(1, PAGE_SIZE / fullLeaderboard.length);
-      const thumbHeight = Math.max(24, Math.round(TRACK_HEIGHT * thumbRatio));
-      const thumbTop = Math.round((currentStart / maxStart) * (TRACK_HEIGHT - thumbHeight));
-      sliderHtml = `
+    const needsScrollbar = fullLeaderboard.length > PAGE_SIZE;
+    const sliderHtml = needsScrollbar
+      ? `
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;user-select:none">
           <button id="lb-scroll-up" type="button" style="border:none;background:none;color:#888;cursor:pointer;padding:2px;font-size:10px;line-height:1">▲</button>
           <div id="lb-scroll-track" style="position:relative;width:14px;height:${TRACK_HEIGHT}px;background:#e6e6e6;border-radius:7px;touch-action:none">
-            <div id="lb-scroll-thumb" style="position:absolute;left:1px;width:12px;height:${thumbHeight}px;top:${thumbTop}px;background:#9a9a9a;border-radius:6px;cursor:grab"></div>
+            <div id="lb-scroll-thumb" style="position:absolute;left:1px;width:12px;background:#9a9a9a;border-radius:6px;cursor:grab"></div>
           </div>
           <button id="lb-scroll-down" type="button" style="border:none;background:none;color:#888;cursor:pointer;padding:2px;font-size:10px;line-height:1">▼</button>
-          <span class="muted" style="font-size:11px;white-space:nowrap;writing-mode:vertical-lr;margin-top:2px">
-            ${rangeStart}-${rangeEnd} / ${fullLeaderboard.length}
-          </span>
-        </div>`;
-    }
+          <span id="lb-scroll-label" class="muted" style="font-size:11px;white-space:nowrap;writing-mode:vertical-lr;margin-top:2px"></span>
+        </div>`
+      : "";
 
     list.innerHTML = `
       <div style="display:flex;gap:0.75rem;align-items:flex-start">
-        <div id="lb-table-wrap" style="overflow-x:auto;flex:1">
-          <table class="lb-table">
-            <thead>
-              <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
+        <div id="lb-scroll-container" class="lb-scroll-hide" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
+          <div id="lb-table-wrap" style="overflow-x:auto">
+            <table class="lb-table">
+              <thead style="position:sticky;top:0;background:#fff;z-index:1">
+                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
         </div>
         ${sliderHtml}
       </div>`;
 
-    if (maxStart > 0) {
-      const track = list.querySelector("#lb-scroll-track");
-      const thumb = list.querySelector("#lb-scroll-thumb");
-      const thumbH = thumb.offsetHeight;
-      const travel = TRACK_HEIGHT - thumbH;
+    if (!needsScrollbar) return;
 
-      const setStartFromDelta = (deltaPx) => {
-        const deltaRatio = travel > 0 ? deltaPx / travel : 0;
-        const newStart = Math.round(dragStartValue + deltaRatio * maxStart);
-        const clamped = Math.min(Math.max(0, newStart), maxStart);
-        if (clamped !== currentStart) {
-          currentStart = clamped;
-          renderPage();
-        }
-      };
+    const scrollContainer = list.querySelector("#lb-scroll-container");
+    const track = list.querySelector("#lb-scroll-track");
+    const thumb = list.querySelector("#lb-scroll-thumb");
+    const label = list.querySelector("#lb-scroll-label");
 
-      let dragging = false;
-      let dragStartY = 0;
-      let dragStartValue = currentStart;
+    const updateThumb = () => {
+      const scrollable = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      const ratio = scrollable > 0 ? scrollContainer.scrollTop / scrollable : 0;
+      const thumbRatio = Math.min(1, scrollContainer.clientHeight / scrollContainer.scrollHeight);
+      const thumbHeight = Math.max(24, Math.round(TRACK_HEIGHT * thumbRatio));
+      const thumbTop = Math.round(ratio * (TRACK_HEIGHT - thumbHeight));
+      thumb.style.height = thumbHeight + "px";
+      thumb.style.top = thumbTop + "px";
+      const approxStart = Math.round(ratio * (fullLeaderboard.length - PAGE_SIZE));
+      const rangeStart = approxStart + 1;
+      const rangeEnd = Math.min(approxStart + PAGE_SIZE, fullLeaderboard.length);
+      label.textContent = `${rangeStart}-${rangeEnd} / ${fullLeaderboard.length}`;
+    };
 
-      const onMove = (clientY) => {
-        setStartFromDelta(clientY - dragStartY);
-      };
-      const onMouseMove = (e) => onMove(e.clientY);
-      const onTouchMove = (e) => {
-        if (e.touches && e.touches[0]) {
-          e.preventDefault();
-          onMove(e.touches[0].clientY);
-        }
-      };
-      const stopDrag = () => {
-        dragging = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", stopDrag);
-        document.removeEventListener("touchmove", onTouchMove);
-        document.removeEventListener("touchend", stopDrag);
-      };
-      const startDrag = (clientY) => {
-        dragging = true;
-        dragStartY = clientY;
-        dragStartValue = currentStart;
-      };
+    // Set tinggi container persis sebesar header + 10 baris, lalu hitung thumb.
+    requestAnimationFrame(() => {
+      const theadEl = scrollContainer.querySelector("thead");
+      const bodyRows = scrollContainer.querySelectorAll("tbody tr");
+      let h = theadEl ? theadEl.offsetHeight : 0;
+      for (let i = 0; i < Math.min(PAGE_SIZE, bodyRows.length); i++) h += bodyRows[i].offsetHeight;
+      if (h > 0) scrollContainer.style.height = h + "px";
+      updateThumb();
+    });
 
-      thumb.addEventListener("mousedown", (e) => {
+    scrollContainer.addEventListener("scroll", updateThumb);
+
+    const setScrollFromDelta = (deltaPx, dragStartScrollTop) => {
+      const travel = TRACK_HEIGHT - thumb.offsetHeight;
+      const scrollable = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      if (travel <= 0) return;
+      scrollContainer.scrollTop = dragStartScrollTop + (deltaPx / travel) * scrollable;
+    };
+
+    let dragStartY = 0;
+    let dragStartScrollTop = 0;
+    const onMouseMove = (e) => setScrollFromDelta(e.clientY - dragStartY, dragStartScrollTop);
+    const onTouchMove = (e) => {
+      if (e.touches && e.touches[0]) {
         e.preventDefault();
-        startDrag(e.clientY);
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", stopDrag);
-      });
-      thumb.addEventListener("touchstart", (e) => {
-        if (e.touches && e.touches[0]) {
-          startDrag(e.touches[0].clientY);
-          document.addEventListener("touchmove", onTouchMove, { passive: false });
-          document.addEventListener("touchend", stopDrag);
-        }
-      });
+        setScrollFromDelta(e.touches[0].clientY - dragStartY, dragStartScrollTop);
+      }
+    };
+    const stopDrag = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", stopDrag);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", stopDrag);
+    };
 
-      // Klik langsung di track (bukan di thumb) -> lompat ke posisi tsb
-      track.addEventListener("mousedown", (e) => {
-        if (e.target === thumb) return;
-        const rect = track.getBoundingClientRect();
-        const clickTop = e.clientY - rect.top - thumbH / 2;
-        const ratio = travel > 0 ? Math.min(Math.max(0, clickTop), travel) / travel : 0;
-        currentStart = Math.min(Math.max(0, Math.round(ratio * maxStart)), maxStart);
-        renderPage();
-      });
+    thumb.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      dragStartY = e.clientY;
+      dragStartScrollTop = scrollContainer.scrollTop;
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", stopDrag);
+    });
+    thumb.addEventListener("touchstart", (e) => {
+      if (e.touches && e.touches[0]) {
+        dragStartY = e.touches[0].clientY;
+        dragStartScrollTop = scrollContainer.scrollTop;
+        document.addEventListener("touchmove", onTouchMove, { passive: false });
+        document.addEventListener("touchend", stopDrag);
+      }
+    });
 
-      list.querySelector("#lb-scroll-up").addEventListener("click", () => {
-        currentStart = Math.max(0, currentStart - 1);
-        renderPage();
-      });
-      list.querySelector("#lb-scroll-down").addEventListener("click", () => {
-        currentStart = Math.min(maxStart, currentStart + 1);
-        renderPage();
-      });
-    }
+    // Klik langsung di track (bukan di thumb) -> lompat ke posisi tsb
+    track.addEventListener("mousedown", (e) => {
+      if (e.target === thumb) return;
+      const rect = track.getBoundingClientRect();
+      const travel = TRACK_HEIGHT - thumb.offsetHeight;
+      const clickTop = e.clientY - rect.top - thumb.offsetHeight / 2;
+      const ratio = travel > 0 ? Math.min(Math.max(0, clickTop), travel) / travel : 0;
+      const scrollable = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      scrollContainer.scrollTop = ratio * scrollable;
+    });
+
+    list.querySelector("#lb-scroll-up").addEventListener("click", () => {
+      scrollContainer.scrollBy({ top: -44, behavior: "smooth" });
+    });
+    list.querySelector("#lb-scroll-down").addEventListener("click", () => {
+      scrollContainer.scrollBy({ top: 44, behavior: "smooth" });
+    });
   }
 
   async function loadBoard() {
@@ -563,7 +569,6 @@ async function renderLeaderboard(container) {
     const seasonSelect = wrap.querySelector("#season-select");
     const seasonId = seasonSelect.value;
     const selectedSeason = seasons.find((s) => String(s.id) === String(seasonId));
-    currentStart = 0;
     try {
       let leaderboard;
       if (selectedSeason && !selectedSeason.isActive) {
@@ -582,63 +587,6 @@ async function renderLeaderboard(container) {
       list.innerHTML = `<p class="error">${err.message}</p>`;
     }
   }
-
-  // Swipe vertikal pakai jari di area tabel untuk geser peringkat (dipasang sekali
-  // di container #lb-list yang persisten, karena isinya diganti tiap renderPage()
-  // tapi elemen container-nya sendiri tidak pernah dibuat ulang).
-  (function attachTableSwipe() {
-    const list = wrap.querySelector("#lb-list");
-    const ROW_PX = 44; // perkiraan tinggi 1 baris, dipakai untuk konversi jarak swipe -> jumlah baris
-    let touchStartX = 0, touchStartY = 0, touchStartVal = 0, decided = null;
-
-    list.addEventListener(
-      "touchstart",
-      (e) => {
-        if (!e.touches || !e.touches[0]) return;
-        const target = e.target;
-        const onControl = target.closest && target.closest("#lb-scroll-track, #lb-scroll-up, #lb-scroll-down");
-        const maxStartNow = Math.max(0, fullLeaderboard.length - PAGE_SIZE);
-        if (onControl || maxStartNow <= 0) {
-          decided = "ignore";
-          return;
-        }
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-        touchStartVal = currentStart;
-        decided = null;
-      },
-      { passive: true }
-    );
-
-    list.addEventListener(
-      "touchmove",
-      (e) => {
-        if (decided === "ignore") return;
-        if (!e.touches || !e.touches[0]) return;
-        const dx = e.touches[0].clientX - touchStartX;
-        const dy = e.touches[0].clientY - touchStartY;
-        if (decided === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
-          decided = Math.abs(dy) > Math.abs(dx) ? "y" : "x";
-        }
-        if (decided === "y") {
-          e.preventDefault(); // cegah scroll halaman ikut geser saat swipe vertikal di tabel
-          const maxStartNow = Math.max(0, fullLeaderboard.length - PAGE_SIZE);
-          const deltaRows = Math.round(-dy / ROW_PX);
-          const newStart = Math.min(Math.max(0, touchStartVal + deltaRows), maxStartNow);
-          if (newStart !== currentStart) {
-            currentStart = newStart;
-            renderPage();
-          }
-        }
-        // decided === "x" -> biarkan scroll horizontal bawaan (overflow-x:auto) jalan seperti biasa
-      },
-      { passive: false }
-    );
-
-    list.addEventListener("touchend", () => {
-      decided = null;
-    });
-  })();
 
   wrap.querySelectorAll("[data-mode]").forEach((b) => {
     b.addEventListener("click", () => {
