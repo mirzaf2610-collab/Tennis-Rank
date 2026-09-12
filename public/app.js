@@ -377,6 +377,31 @@ async function renderLeaderboard(container) {
     tourneyPreviewWrap.querySelector("#tourney-preview-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
 
+  const pendingWrap = el(`<div class="card" style="display:none"><h2>⏳ Menunggu Konfirmasi</h2><p class="muted" style="font-size:12px;margin-top:-0.5rem">Hasil di bawah ini baru klaim sepihak dan BELUM masuk ke rating -- cuma pengingat supaya cepat dikonfirmasi/ditolak oleh pihak yang bersangkutan.</p><div id="pending-reminder-list"></div></div>`);
+  container.appendChild(pendingWrap);
+  try {
+    const { matches } = await api("/pending-matches");
+    if (matches.length > 0) {
+      pendingWrap.style.display = "block";
+      pendingWrap.querySelector("#pending-reminder-list").innerHTML = matches
+        .map((m) => {
+          const badge = m.type === "double"
+            ? `<span style="font-size:10px;background:#e3f2fd;color:#1565c0;padding:2px 6px;border-radius:6px;font-weight:600">GANDA</span>`
+            : `<span style="font-size:10px;background:#fff3cd;color:#8a6d00;padding:2px 6px;border-radius:6px;font-weight:600">SINGLE</span>`;
+          return `
+            <div class="row" style="align-items:flex-start;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+                ${badge} <span class="muted" style="font-size:11px">${timeAgo(m.createdAt)}</span>
+              </div>
+              <div style="font-size:14px"><strong>${m.claimedWinnerText}</strong> klaim menang vs ${m.claimedLoserText} <span class="muted">(${m.score})</span> <span class="muted" style="font-size:12px">— menunggu konfirmasi</span></div>
+            </div>`;
+        })
+        .join("");
+    }
+  } catch (err) {
+    // Diam saja kalau gagal -- ini cuma pengingat tambahan, tidak kritikal
+  }
+
   const liveWrap = el(`<div class="card"><h2>🎾 Score Update</h2><div id="live-score-list">Memuat...</div></div>`);
   container.appendChild(liveWrap);
   try {
@@ -926,7 +951,17 @@ async function renderAdmin(container) {
           <option value="1">1 Lapangan</option>
           <option value="2" selected>2 Lapangan</option>
         </select>
-        <p class="muted" style="font-size:12px;margin-top:-0.5rem">Tidak perlu main bersamaan real-time — ini cuma menentukan berapa match per ronde. Jumlah ronde &amp; rotasi partner dihitung otomatis sistem supaya semua orang main jumlah yang sama rata.</p>
+        <label style="margin-top:0.5rem">Berapa kali main (ganti pasangan)</label>
+        <select id="tourney-rounds-mode">
+          <option value="auto">Otomatis (jamin semua main sama rata -- bisa banyak kali)</option>
+          <option value="manual" selected>Tentukan sendiri</option>
+        </select>
+        <div id="tourney-manual-rounds-wrap">
+          <label style="font-size:12px">Target main tiap peserta</label>
+          <input id="tourney-target-plays" type="number" min="1" max="30" value="4" />
+          <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-rounds-estimate">Tambah peserta dulu buat lihat perkiraan.</p>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:-0.5rem">Tidak perlu main bersamaan real-time — ini cuma menentukan berapa match yang dijadwalkan.</p>
       </div>
       <label style="margin-top:0.5rem">Susun peserta (urutan = posisi/seed, bisa diatur naik-turun)</label>
       <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-participant-hint">Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.</p>
@@ -990,11 +1025,59 @@ async function renderAdmin(container) {
       });
       rowsWrap.appendChild(row);
     });
+    updateRoundsEstimate();
   }
 
   function isCappuccino() {
     return tournamentCreateWrap.querySelector("#tourney-format").value === "cappuccino";
   }
+
+  // Perkiraan berapa kali tiap peserta main, berdasarkan jumlah peserta, lapangan,
+  // dan jumlah ronde yang dipilih -- cuma informasi buat bantu admin, bukan patokan pasti
+  // (jumlah pastinya bisa beda 1 kali antar peserta tergantung rotasi istirahat).
+  // Konversi "target main per peserta" -> jumlah ronde yang dibutuhkan, lalu tampilkan
+  // perkiraan hasil akhirnya (min-max kali main, karena kalau jumlah peserta tidak pas
+  // kelipatan lapangan, bisa selisih 1x antar peserta -- sudah disimulasikan, ini wajar).
+  function computeRoundsFromTarget(n, numCourts, target) {
+    let active = Math.min(n, numCourts * 4);
+    active = active - (active % 4);
+    if (active <= 0) return 1;
+    return Math.max(1, Math.round((target * n) / active));
+  }
+
+  function updateRoundsEstimate() {
+    const estimateEl = tournamentCreateWrap.querySelector("#tourney-rounds-estimate");
+    if (!estimateEl) return;
+    const n = participantEntries.length;
+    if (n < 4) {
+      estimateEl.textContent = "Tambah peserta dulu buat lihat perkiraan.";
+      return;
+    }
+    const numCourts = Number(tournamentCreateWrap.querySelector("#tourney-num-courts").value) || 1;
+    const target = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value) || 0;
+    let active = Math.min(n, numCourts * 4);
+    active = active - (active % 4);
+    const numRounds = computeRoundsFromTarget(n, numCourts, target);
+    const sitOutPerRound = n - active;
+    // Perkiraan sebaran: total sit-out selama numRounds ronde didistribusikan serata
+    // mungkin ke semua peserta -> beda paling banter 1x main antar peserta.
+    const totalSitOuts = sitOutPerRound * numRounds;
+    const minSitOut = Math.floor(totalSitOuts / n);
+    const maxSitOut = Math.ceil(totalSitOuts / n);
+    const maxPlays = numRounds - minSitOut;
+    const minPlays = numRounds - maxSitOut;
+    const rangeText = minPlays === maxPlays ? `tepat ${minPlays}x` : `${minPlays}-${maxPlays}x`;
+    estimateEl.textContent = `-> akan jadi ${numRounds}x ganti pasangan, hasil akhirnya tiap peserta main ${rangeText} (dari ${n} peserta, ${numCourts} lapangan)`;
+  }
+
+  function toggleRoundsMode() {
+    const mode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
+    tournamentCreateWrap.querySelector("#tourney-manual-rounds-wrap").style.display = mode === "manual" ? "block" : "none";
+  }
+  tournamentCreateWrap.querySelector("#tourney-rounds-mode").addEventListener("change", toggleRoundsMode);
+  tournamentCreateWrap.querySelector("#tourney-target-plays").addEventListener("input", updateRoundsEstimate);
+  tournamentCreateWrap.querySelector("#tourney-num-courts").addEventListener("change", updateRoundsEstimate);
+  toggleRoundsMode();
 
   function toggleTourneyTypeSection() {
     const cappuccino = isCappuccino();
@@ -1012,6 +1095,7 @@ async function renderAdmin(container) {
       ? "Untuk Sistem Cappuccino, ini cuma daftar peserta -- partner akan diacak otomatis tiap ronde, urutan tidak terlalu penting (bisa dipakai tombol Acak Urutan)."
       : "Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.";
     toggleTourneyTypeSection();
+    updateRoundsEstimate();
   });
 
   tournamentCreateWrap.querySelector("#tourney-shuffle-btn").addEventListener("click", () => {
@@ -1068,6 +1152,11 @@ async function renderAdmin(container) {
     const format = tournamentCreateWrap.querySelector("#tourney-format").value;
     const numGroups = Number(tournamentCreateWrap.querySelector("#tourney-num-groups").value);
     const numCourts = Number(tournamentCreateWrap.querySelector("#tourney-num-courts").value);
+    const roundsMode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
+    const targetPlays = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value);
+    const numRounds = roundsMode === "manual" && Number.isInteger(targetPlays) && targetPlays > 0
+      ? computeRoundsFromTarget(participantEntries.length, numCourts, targetPlays)
+      : null;
     const errorEl = tournamentCreateWrap.querySelector("#tourney-error");
     errorEl.style.display = "none";
 
@@ -1078,6 +1167,16 @@ async function renderAdmin(container) {
     }
     if (format === "cappuccino" && participantEntries.length < 4) {
       errorEl.textContent = "Sistem Cappuccino butuh minimal 4 peserta";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (format === "cappuccino" && roundsMode === "manual" && (!Number.isInteger(targetPlays) || targetPlays < 1 || targetPlays > 30)) {
+      errorEl.textContent = "Target main per peserta harus bilangan bulat 1-30";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (format === "cappuccino" && roundsMode === "manual" && numRounds > 30) {
+      errorEl.textContent = `Target ${targetPlays}x main butuh ${numRounds} kali ganti pasangan (kebanyakan, maks 30) -- turunkan targetnya atau tambah lapangan`;
       errorEl.style.display = "block";
       return;
     }
@@ -1108,6 +1207,7 @@ async function renderAdmin(container) {
           name, format, type, participantIds,
           numGroups: format === "group_knockout" ? numGroups : undefined,
           numCourts: format === "cappuccino" ? numCourts : undefined,
+          numRounds: format === "cappuccino" ? numRounds : undefined,
         }),
       });
       alert(data.message);
