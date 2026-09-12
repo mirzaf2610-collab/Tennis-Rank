@@ -426,7 +426,8 @@ async function renderLeaderboard(container) {
         leaderboard = data.leaderboard;
       }
       if (leaderboard.length === 0) {
-        list.innerHTML = `<p class="muted">Belum ada pemain dengan minimal 3 match.</p>`;
+        const minText = currentMode === "double" ? "minimal 3 match" : "minimal 1 match";
+        list.innerHTML = `<p class="muted">Belum ada pemain dengan ${minText}.</p>`;
       } else {
         const maxMatches = Math.max(...leaderboard.map((p) => p.matchesPlayed));
         const rows = leaderboard
@@ -439,6 +440,7 @@ async function renderLeaderboard(container) {
               : `<span class="muted">0</span>`;
             return `
               <tr>
+                <td>${p.rank}</td>
                 <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}</td>
                 <td>${Math.round(p.currentRating)}</td>
                 <td>${p.matchesPlayed}</td>
@@ -454,7 +456,7 @@ async function renderLeaderboard(container) {
           <div style="overflow-x:auto">
             <table class="lb-table">
               <thead>
-                <tr><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
+                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
@@ -1477,7 +1479,7 @@ async function renderRules(container) {
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
       <p style="font-size:16px;line-height:1.7">
-        Minimal sudah main 3 kali (Single dan Ganda dihitung terpisah) baru muncul di papan ranking.
+        Single: minimal sudah main 1 kali baru muncul di papan ranking. Ganda: minimal 3 kali.
         Bisa diurutkan berdasarkan Poin, Jumlah Main, atau Win Rate.
       </p>
 
