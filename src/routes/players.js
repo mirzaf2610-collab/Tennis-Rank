@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
-const { MIN_MATCHES_LEADERBOARD } = require("../elo");
+const { MIN_MATCHES_LEADERBOARD_SINGLES } = require("../elo");
 const { uploadAvatar } = require("../supabaseStorage");
 const { computeSinglesStats, computeDoublesStats, buildBadges } = require("../achievements");
 
@@ -72,7 +72,7 @@ router.get("/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
 
   const players = await prisma.player.findMany({
-    where: { isActive: true, isApproved: true, isDummy: false, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
+    where: { isActive: true, isApproved: true, isDummy: false, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_SINGLES } },
     select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true, noResponseCount: true },
   });
 
@@ -99,14 +99,14 @@ router.get("/leaderboard", async (req, res) => {
 // GET /api/leaderboard/pending - pemain belum eligible (<3 match)
 router.get("/leaderboard/pending", async (req, res) => {
   const players = await prisma.player.findMany({
-    where: { isActive: true, matchesPlayed: { lt: MIN_MATCHES_LEADERBOARD } },
+    where: { isActive: true, matchesPlayed: { lt: MIN_MATCHES_LEADERBOARD_SINGLES } },
     orderBy: { matchesPlayed: "desc" },
     select: { id: true, name: true, currentRating: true, matchesPlayed: true },
   });
 
   const result = players.map((p) => ({
     ...p,
-    matchesNeeded: MIN_MATCHES_LEADERBOARD - p.matchesPlayed,
+    matchesNeeded: MIN_MATCHES_LEADERBOARD_SINGLES - p.matchesPlayed,
   }));
   res.json({ pending: result });
 });

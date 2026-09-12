@@ -1,7 +1,7 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
-const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD } = require("../elo");
+const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_DOUBLES } = require("../elo");
 const { computeDoublesStats, buildBadges } = require("../achievements");
 const { sendPushToPlayer } = require("../pushService");
 
@@ -13,7 +13,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
 
   const players = await prisma.player.findMany({
-    where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD } },
+    where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_DOUBLES } },
     select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
   });
 

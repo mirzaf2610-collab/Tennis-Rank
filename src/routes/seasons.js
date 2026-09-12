@@ -2,7 +2,7 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const { requireAuth } = require("../auth");
 const { computeSinglesStats, computeDoublesStats, buildBadges } = require("../achievements");
-const { PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD } = require("../elo");
+const { PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_SINGLES, MIN_MATCHES_LEADERBOARD_DOUBLES } = require("../elo");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -76,7 +76,8 @@ router.get("/seasons/:id/leaderboard", async (req, res) => {
       })
     );
 
-    let leaderboard = results.filter((p) => p.matchesPlayed >= MIN_MATCHES_LEADERBOARD);
+    const minMatches = type === "doubles" ? MIN_MATCHES_LEADERBOARD_DOUBLES : MIN_MATCHES_LEADERBOARD_SINGLES;
+    let leaderboard = results.filter((p) => p.matchesPlayed >= minMatches);
     leaderboard = sortLeaderboard(leaderboard).map((p, i) => ({ rank: i + 1, ...p }));
 
     return res.json({ season, leaderboard });
@@ -85,8 +86,9 @@ router.get("/seasons/:id/leaderboard", async (req, res) => {
   // Season sudah berakhir -> baca dari arsip
   const records = await prisma.seasonRecord.findMany({ where: { seasonId } });
 
+  const minMatchesArchived = type === "doubles" ? MIN_MATCHES_LEADERBOARD_DOUBLES : MIN_MATCHES_LEADERBOARD_SINGLES;
   let leaderboard = records
-    .filter((r) => (type === "doubles" ? r.doublesMatchesPlayed : r.singlesMatchesPlayed) >= MIN_MATCHES_LEADERBOARD)
+    .filter((r) => (type === "doubles" ? r.doublesMatchesPlayed : r.singlesMatchesPlayed) >= minMatchesArchived)
     .map((r) => ({
       id: r.playerId,
       name: r.playerName,
