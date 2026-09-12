@@ -5,7 +5,8 @@
 //   meski dominasinya (rasio menang) sama.
 // DOUBLES: tetap format tetap (first-to-6), tidak ada opsi format.
 
-const MIN_MATCHES_LEADERBOARD = 3;
+const MIN_MATCHES_LEADERBOARD_SINGLES = 1;
+const MIN_MATCHES_LEADERBOARD_DOUBLES = 3;
 const PROVISIONAL_THRESHOLD = 10;
 const K_PROVISIONAL = 32;
 const K_STABLE = 20;
@@ -126,7 +127,8 @@ module.exports = {
   calculateDoublesElo,
   getKFactor,
   isValidTargetGames,
-  MIN_MATCHES_LEADERBOARD,
+  MIN_MATCHES_LEADERBOARD_SINGLES,
+  MIN_MATCHES_LEADERBOARD_DOUBLES,
   PROVISIONAL_THRESHOLD,
   DEFAULT_TARGET_GAMES,
   MIN_TARGET_GAMES,
