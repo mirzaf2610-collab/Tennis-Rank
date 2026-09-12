@@ -195,7 +195,7 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
 // Untuk Single, participantIds berisi array id biasa: [id1, id2, id3, ...]
 // Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
-  const { name, format, type, participantIds, numGroups, numCourts } = req.body;
+  const { name, format, type, participantIds, numGroups, numCourts, numRounds } = req.body;
   const tType = format === "cappuccino" ? "doubles" : (type === "doubles" ? "doubles" : "singles");
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
@@ -213,6 +213,9 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
     }
     if (![1, 2].includes(numCourts)) {
       return res.status(400).json({ error: { code: "INVALID_COURTS", message: "Jumlah lapangan harus 1 atau 2" } });
+    }
+    if (numRounds != null && (!Number.isInteger(numRounds) || numRounds < 1 || numRounds > 30)) {
+      return res.status(400).json({ error: { code: "INVALID_ROUNDS", message: "Jumlah ronde harus bilangan bulat 1-30" } });
     }
   }
 
@@ -258,8 +261,12 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
         await generateBracketMatches(tx, t.id, createdParticipants.map((p) => p.id), "main");
       } else if (format === "cappuccino") {
         const participantIdsOnly = createdParticipants.map((p) => p.id);
-        const numRounds = computeIdealRounds(participantIdsOnly.length, numCourts);
-        const schedule = generateCappuccinoSchedule(participantIdsOnly, numCourts, numRounds);
+        // Kalau admin sudah pilih jumlah ronde sendiri, pakai itu. Kalau tidak diisi,
+        // baru fallback ke rumus "ideal" (jaminan semua pemain main sama rata).
+        const roundsToUse = Number.isInteger(numRounds) && numRounds > 0
+          ? numRounds
+          : computeIdealRounds(participantIdsOnly.length, numCourts);
+        const schedule = generateCappuccinoSchedule(participantIdsOnly, numCourts, roundsToUse);
         for (const { round, matches } of schedule) {
           for (let mi = 0; mi < matches.length; mi++) {
             const m = matches[mi];
