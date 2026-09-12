@@ -12,41 +12,46 @@ const prisma = new PrismaClient();
 router.get("/doubles/leaderboard", async (req, res) => {
   const sortBy = req.query.sortBy || "rating";
 
-  const players = await prisma.player.findMany({
-    where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_DOUBLES } },
-    select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
-  });
+  try {
+    const players = await prisma.player.findMany({
+      where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_DOUBLES } },
+      select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
+    });
 
-  let leaderboard = await Promise.all(
-    players.map(async (p) => {
-      const stats = await computeDoublesStats(prisma, p.id);
-      const badges = buildBadges(stats);
-      return {
-        id: p.id,
-        photoUrl: p.photoUrl,
-        name: p.name,
-        currentRating: p.doublesRating,
-        matchesPlayed: p.doublesMatchesPlayed,
-        isProvisional: p.doublesIsProvisional,
-        wins: stats.wins,
-        losses: stats.losses,
-        winRate: stats.winRate,
-        noResponseCount: p.noResponseCount,
-        badges,
-      };
-    })
-  );
+    let leaderboard = await Promise.all(
+      players.map(async (p) => {
+        const stats = await computeDoublesStats(prisma, p.id);
+        const badges = buildBadges(stats);
+        return {
+          id: p.id,
+          photoUrl: p.photoUrl,
+          name: p.name,
+          currentRating: p.doublesRating,
+          matchesPlayed: p.doublesMatchesPlayed,
+          isProvisional: p.doublesIsProvisional,
+          wins: stats.wins,
+          losses: stats.losses,
+          winRate: stats.winRate,
+          noResponseCount: p.noResponseCount,
+          badges,
+        };
+      })
+    );
 
-  if (sortBy === "matches") {
-    leaderboard.sort((a, b) => b.matchesPlayed - a.matchesPlayed);
-  } else if (sortBy === "winrate") {
-    leaderboard.sort((a, b) => b.winRate - a.winRate || b.matchesPlayed - a.matchesPlayed);
-  } else {
-    leaderboard.sort((a, b) => Number(b.currentRating) - Number(a.currentRating));
+    if (sortBy === "matches") {
+      leaderboard.sort((a, b) => b.matchesPlayed - a.matchesPlayed);
+    } else if (sortBy === "winrate") {
+      leaderboard.sort((a, b) => b.winRate - a.winRate || b.matchesPlayed - a.matchesPlayed);
+    } else {
+      leaderboard.sort((a, b) => Number(b.currentRating) - Number(a.currentRating));
+    }
+
+    leaderboard = leaderboard.map((p, i) => ({ rank: i + 1, ...p }));
+    res.json({ leaderboard });
+  } catch (e) {
+    console.error("Gagal ambil leaderboard ganda:", e);
+    res.status(500).json({ error: { code: "DOUBLES_LEADERBOARD_FAILED", message: e.message } });
   }
-
-  leaderboard = leaderboard.map((p, i) => ({ rank: i + 1, ...p }));
-  res.json({ leaderboard });
 });
 
 // POST /api/doubles/matches - submit hasil doubles
