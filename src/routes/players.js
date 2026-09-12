@@ -129,7 +129,7 @@ router.get("/players/:id", async (req, res) => {
       id: true, name: true, unitKerja: true, currentRating: true,
       matchesPlayed: true, isProvisional: true, createdAt: true,
       doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true,
-      photoUrl: true,
+      photoUrl: true, pendingName: true,
     },
   });
   if (!player) {
@@ -154,6 +154,24 @@ router.get("/players/:id", async (req, res) => {
       doublesBadges: buildBadges(doublesStats),
     },
   });
+});
+
+// POST /api/players/me/request-name-change - ajukan perubahan nama, nunggu approval admin
+router.post("/players/me/request-name-change", requireAuth, async (req, res) => {
+  const { newName } = req.body;
+  const trimmed = (newName || "").trim();
+  if (!trimmed) {
+    return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Nama baru wajib diisi" } });
+  }
+  if (trimmed.length > 100) {
+    return res.status(400).json({ error: { code: "NAME_TOO_LONG", message: "Nama terlalu panjang" } });
+  }
+  const player = await prisma.player.findUnique({ where: { id: req.playerId } });
+  if (trimmed === player.name) {
+    return res.status(400).json({ error: { code: "SAME_NAME", message: "Nama baru sama dengan nama sekarang" } });
+  }
+  await prisma.player.update({ where: { id: req.playerId }, data: { pendingName: trimmed } });
+  res.json({ message: `Pengajuan nama "${trimmed}" terkirim, menunggu persetujuan admin.` });
 });
 
 // GET /api/players - list semua pemain aktif (untuk pilih lawan saat submit match)

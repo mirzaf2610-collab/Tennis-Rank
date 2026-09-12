@@ -176,4 +176,36 @@ router.delete("/admin/matches/:id", requireAuth, requireAdmin, async (req, res) 
   }
 });
 
+// GET /api/admin/pending-name-changes - daftar pengajuan ganti nama yang menunggu persetujuan
+router.get("/admin/pending-name-changes", requireAuth, requireAdmin, async (req, res) => {
+  const players = await prisma.player.findMany({
+    where: { pendingName: { not: null } },
+    select: { id: true, name: true, pendingName: true, email: true },
+  });
+  res.json({ players });
+});
+
+// POST /api/admin/approve-name-change/:id
+router.post("/admin/approve-name-change/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const player = await prisma.player.findUnique({ where: { id } });
+  if (!player || !player.pendingName) {
+    return res.status(404).json({ error: { code: "NO_PENDING_REQUEST", message: "Tidak ada pengajuan nama untuk pemain ini" } });
+  }
+  const oldName = player.name;
+  await prisma.player.update({ where: { id }, data: { name: player.pendingName, pendingName: null } });
+  res.json({ message: `Nama "${oldName}" berhasil diganti jadi "${player.pendingName}"` });
+});
+
+// POST /api/admin/reject-name-change/:id
+router.post("/admin/reject-name-change/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const player = await prisma.player.findUnique({ where: { id } });
+  if (!player) {
+    return res.status(404).json({ error: { code: "PLAYER_NOT_FOUND", message: "Pemain tidak ditemukan" } });
+  }
+  await prisma.player.update({ where: { id }, data: { pendingName: null } });
+  res.json({ message: `Pengajuan ganti nama ${player.name} ditolak.` });
+});
+
 module.exports = router;
