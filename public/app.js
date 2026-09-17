@@ -357,7 +357,7 @@ async function renderLeaderboard(container) {
     } else {
       list.innerHTML = "";
       ongoing.forEach((t) => {
-        const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi", cappuccino: "Sistem Cappuccino" }[t.format] || "Round Robin";
+        const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi", cappuccino: "Sistem Cappuccino", cappuccino_external: "Cappuccino External" }[t.format] || "Round Robin";
         const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
         const item = el(`
           <div class="row" style="cursor:pointer">
@@ -377,13 +377,20 @@ async function renderLeaderboard(container) {
     tourneyPreviewWrap.querySelector("#tourney-preview-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
 
-  const pendingWrap = el(`<div class="card" style="display:none"><h2>⏳ Menunggu Konfirmasi</h2><p class="muted" style="font-size:12px;margin-top:-0.5rem">Hasil di bawah ini baru klaim sepihak dan BELUM masuk ke rating -- cuma pengingat supaya cepat dikonfirmasi/ditolak oleh pihak yang bersangkutan.</p><div id="pending-reminder-list"></div></div>`);
+  const pendingWrap = el(`<div class="card" style="display:none"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">⏳ Menunggu Konfirmasi</h2><button id="pending-refresh-btn" class="btn secondary" style="margin-top:0;width:auto;padding:4px 10px;font-size:11px">🔄 Refresh</button></div><p class="muted" style="font-size:12px;margin-top:0.25rem">Hasil di bawah ini baru klaim sepihak dan BELUM masuk ke rating -- cuma pengingat supaya cepat dikonfirmasi/ditolak oleh pihak yang bersangkutan.</p><div id="pending-reminder-list"></div></div>`);
   container.appendChild(pendingWrap);
-  try {
-    const { matches } = await api("/pending-matches");
-    if (matches.length > 0) {
+
+  async function loadPendingReminder() {
+    const listEl = pendingWrap.querySelector("#pending-reminder-list");
+    listEl.innerHTML = "Memuat...";
+    try {
+      const { matches } = await api("/pending-matches");
+      if (matches.length === 0) {
+        pendingWrap.style.display = "none";
+        return;
+      }
       pendingWrap.style.display = "block";
-      pendingWrap.querySelector("#pending-reminder-list").innerHTML = matches
+      listEl.innerHTML = matches
         .map((m) => {
           const badge = m.type === "double"
             ? `<span style="font-size:10px;background:#e3f2fd;color:#1565c0;padding:2px 6px;border-radius:6px;font-weight:600">GANDA</span>`
@@ -397,10 +404,12 @@ async function renderLeaderboard(container) {
             </div>`;
         })
         .join("");
+    } catch (err) {
+      // Diam saja kalau gagal -- ini cuma pengingat tambahan, tidak kritikal
     }
-  } catch (err) {
-    // Diam saja kalau gagal -- ini cuma pengingat tambahan, tidak kritikal
   }
+  pendingWrap.querySelector("#pending-refresh-btn").addEventListener("click", loadPendingReminder);
+  loadPendingReminder();
 
   const liveWrap = el(`<div class="card"><h2>🎾 Score Update</h2><div id="live-score-list">Memuat...</div></div>`);
   container.appendChild(liveWrap);
@@ -940,6 +949,7 @@ async function renderAdmin(container) {
         <option value="bracket">Bracket/Eliminasi</option>
         <option value="group_knockout">Setengah Kompetisi (Fase Grup + Knockout)</option>
         <option value="cappuccino">Sistem Cappuccino (partner ganti-ganti tiap ronde)</option>
+        <option value="cappuccino_external">Sistem Cappuccino External (boleh peserta tamu, TIDAK pengaruhi rating)</option>
       </select>
       <div id="tourney-groups-section" style="display:none">
         <label>Jumlah grup</label>
@@ -970,6 +980,11 @@ async function renderAdmin(container) {
       <select id="tourney-add-picker" style="margin-top:0.5rem"></select>
       <select id="tourney-add-picker2" style="display:none;margin-top:0.5rem"></select>
       <button id="tourney-add-participant-btn" class="btn secondary" style="margin-top:0.5rem">+ Tambah Peserta</button>
+      <div id="tourney-guest-section" style="display:none;margin-top:0.5rem">
+        <p class="muted" style="font-size:12px;margin-bottom:0.25rem">Atau tambah peserta tamu (nama manual, tidak terdaftar di aplikasi, hasilnya tidak pengaruh ke rating siapapun):</p>
+        <input id="tourney-guest-name" type="text" placeholder="Nama tamu" />
+        <button id="tourney-add-guest-btn" class="btn secondary" style="margin-top:0.5rem">+ Tambah Peserta Tamu</button>
+      </div>
       <div id="tourney-error" class="error" style="display:none;margin-top:0.75rem"></div>
       <button id="tourney-create-btn" class="btn">Buat Turnamen</button>
     </div>
@@ -992,18 +1007,20 @@ async function renderAdmin(container) {
   tournamentCreateWrap.querySelector("#tourney-add-picker").innerHTML = playerOptionsHtml();
   tournamentCreateWrap.querySelector("#tourney-add-picker2").innerHTML = playerOptionsHtml();
 
-  // participantEntries: array of { p1Id, p1Name, p2Id, p2Name } -- p2 null untuk Single/Cappuccino
+  // participantEntries: array of { p1Id, p1Name, p2Id, p2Name, isGuest } -- p2 null untuk
+  // Single/Cappuccino; isGuest=true kalau nama tamu manual (p1Id null), khusus Cappuccino External.
   let participantEntries = [];
 
   function renderParticipantRows() {
     const rowsWrap = tournamentCreateWrap.querySelector("#tourney-participant-rows");
     rowsWrap.innerHTML = "";
     participantEntries.forEach((entry, idx) => {
+      const guestBadge = entry.isGuest ? `<span style="font-size:10px;background:#f3e5f5;color:#6a1b9a;padding:2px 6px;border-radius:6px;font-weight:600;margin-right:4px">TAMU</span>` : "";
       const label = entry.p2Name ? `${entry.p1Name}/${entry.p2Name}` : entry.p1Name;
       const row = el(`
         <div class="row" style="gap:8px;align-items:center;padding:6px 0">
           <span style="width:22px;color:#999;font-size:12px">#${idx + 1}</span>
-          <span style="flex:1">${label}</span>
+          <span style="flex:1">${guestBadge}${label}</span>
           <button type="button" class="btn secondary move-up-btn" style="margin-top:0;width:auto;padding:4px 8px" ${idx === 0 ? "disabled" : ""}>↑</button>
           <button type="button" class="btn secondary move-down-btn" style="margin-top:0;width:auto;padding:4px 8px" ${idx === participantEntries.length - 1 ? "disabled" : ""}>↓</button>
           <button type="button" class="btn danger remove-btn" style="margin-top:0;width:auto;padding:4px 8px">✕</button>
@@ -1029,7 +1046,11 @@ async function renderAdmin(container) {
   }
 
   function isCappuccino() {
-    return tournamentCreateWrap.querySelector("#tourney-format").value === "cappuccino";
+    const f = tournamentCreateWrap.querySelector("#tourney-format").value;
+    return f === "cappuccino" || f === "cappuccino_external";
+  }
+  function isCappuccinoExternal() {
+    return tournamentCreateWrap.querySelector("#tourney-format").value === "cappuccino_external";
   }
 
   // Perkiraan berapa kali tiap peserta main, berdasarkan jumlah peserta, lapangan,
@@ -1085,17 +1106,33 @@ async function renderAdmin(container) {
     tournamentCreateWrap.querySelector("#tourney-type-section").style.display = cappuccino ? "none" : "block";
     tournamentCreateWrap.querySelector("#tourney-add-picker2").style.display = (!cappuccino && type === "doubles") ? "inline-block" : "none";
     tournamentCreateWrap.querySelector("#tourney-shuffle-btn").style.display = cappuccino ? "inline-block" : "none";
+    tournamentCreateWrap.querySelector("#tourney-guest-section").style.display = isCappuccinoExternal() ? "block" : "none";
   }
   tournamentCreateWrap.querySelector("#tourney-type").addEventListener("change", toggleTourneyTypeSection);
 
   tournamentCreateWrap.querySelector("#tourney-format").addEventListener("change", (e) => {
     tournamentCreateWrap.querySelector("#tourney-groups-section").style.display = e.target.value === "group_knockout" ? "block" : "none";
-    tournamentCreateWrap.querySelector("#tourney-courts-section").style.display = e.target.value === "cappuccino" ? "block" : "none";
-    tournamentCreateWrap.querySelector("#tourney-participant-hint").textContent = e.target.value === "cappuccino"
+    tournamentCreateWrap.querySelector("#tourney-courts-section").style.display = isCappuccino() ? "block" : "none";
+    tournamentCreateWrap.querySelector("#tourney-participant-hint").textContent = isCappuccino()
       ? "Untuk Sistem Cappuccino, ini cuma daftar peserta -- partner akan diacak otomatis tiap ronde, urutan tidak terlalu penting (bisa dipakai tombol Acak Urutan)."
       : "Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.";
     toggleTourneyTypeSection();
     updateRoundsEstimate();
+  });
+
+  tournamentCreateWrap.querySelector("#tourney-add-guest-btn").addEventListener("click", () => {
+    const errorEl = tournamentCreateWrap.querySelector("#tourney-error");
+    errorEl.style.display = "none";
+    const nameInput = tournamentCreateWrap.querySelector("#tourney-guest-name");
+    const guestName = nameInput.value.trim();
+    if (!guestName) {
+      errorEl.textContent = "Nama tamu tidak boleh kosong";
+      errorEl.style.display = "block";
+      return;
+    }
+    participantEntries.push({ p1Id: null, p1Name: guestName, p2Id: null, p2Name: null, isGuest: true });
+    renderParticipantRows();
+    nameInput.value = "";
   });
 
   tournamentCreateWrap.querySelector("#tourney-shuffle-btn").addEventListener("click", () => {
@@ -1165,22 +1202,22 @@ async function renderAdmin(container) {
       errorEl.style.display = "block";
       return;
     }
-    if (format === "cappuccino" && participantEntries.length < 4) {
+    if (isCappuccino() && participantEntries.length < 4) {
       errorEl.textContent = "Sistem Cappuccino butuh minimal 4 peserta";
       errorEl.style.display = "block";
       return;
     }
-    if (format === "cappuccino" && roundsMode === "manual" && (!Number.isInteger(targetPlays) || targetPlays < 1 || targetPlays > 30)) {
+    if (isCappuccino() && roundsMode === "manual" && (!Number.isInteger(targetPlays) || targetPlays < 1 || targetPlays > 30)) {
       errorEl.textContent = "Target main per peserta harus bilangan bulat 1-30";
       errorEl.style.display = "block";
       return;
     }
-    if (format === "cappuccino" && roundsMode === "manual" && numRounds > 30) {
+    if (isCappuccino() && roundsMode === "manual" && numRounds > 30) {
       errorEl.textContent = `Target ${targetPlays}x main butuh ${numRounds} kali ganti pasangan (kebanyakan, maks 30) -- turunkan targetnya atau tambah lapangan`;
       errorEl.style.display = "block";
       return;
     }
-    if (format !== "cappuccino" && participantEntries.length < 2) {
+    if (!isCappuccino() && participantEntries.length < 2) {
       errorEl.textContent = "Tambahkan minimal 2 peserta";
       errorEl.style.display = "block";
       return;
@@ -1196,9 +1233,9 @@ async function renderAdmin(container) {
       return;
     }
 
-    const participantIds = (type === "doubles" && format !== "cappuccino")
-      ? participantEntries.map((e) => [e.p1Id, e.p2Id])
-      : participantEntries.map((e) => e.p1Id);
+    const participantIds = isCappuccino()
+      ? participantEntries.map((e) => (e.isGuest ? { guestName: e.p1Name } : e.p1Id))
+      : (type === "doubles" ? participantEntries.map((e) => [e.p1Id, e.p2Id]) : participantEntries.map((e) => e.p1Id));
 
     try {
       const data = await api("/admin/tournaments", {
@@ -1206,8 +1243,8 @@ async function renderAdmin(container) {
         body: JSON.stringify({
           name, format, type, participantIds,
           numGroups: format === "group_knockout" ? numGroups : undefined,
-          numCourts: format === "cappuccino" ? numCourts : undefined,
-          numRounds: format === "cappuccino" ? numRounds : undefined,
+          numCourts: isCappuccino() ? numCourts : undefined,
+          numRounds: isCappuccino() ? numRounds : undefined,
         }),
       });
       alert(data.message);
@@ -1434,7 +1471,7 @@ async function renderTournaments(container) {
     }
     list.innerHTML = "";
     filtered.forEach((t) => {
-      const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi", cappuccino: "Sistem Cappuccino" }[t.format] || "Round Robin";
+      const formatLabel = { bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi", cappuccino: "Sistem Cappuccino", cappuccino_external: "Cappuccino External" }[t.format] || "Round Robin";
       const typeLabel = t.type === "doubles" ? "Ganda" : "Single";
       const statusBadge = t.status === "completed"
         ? `<span style="font-size:11px;background:#e0e0e0;color:#555;padding:2px 8px;border-radius:6px">Selesai</span>`
@@ -1612,9 +1649,12 @@ async function renderTournamentDetail(container) {
     const currentPlayerId = state.player ? state.player.id : null;
     const detail = wrap.querySelector("#tournament-detail");
 
-    const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)", cappuccino: "Sistem Cappuccino" }[tournament.format];
+    const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)", cappuccino: "Sistem Cappuccino", cappuccino_external: "Sistem Cappuccino External (tidak pengaruhi rating)" }[tournament.format];
     let html = `<h2>🏆 ${tournament.name}</h2>`;
     html += `<p class="muted" style="font-size:13px">${formatLabel} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
+    if (tournament.format === "cappuccino_external") {
+      html += `<p class="muted" style="font-size:12px;background:#f3e5f5;padding:6px 10px;border-radius:8px">☕ Turnamen ini murni buat seru-seruan -- boleh ada peserta tamu (tidak terdaftar di aplikasi), dan hasilnya TIDAK pengaruh ke rating siapapun.</p>`;
+    }
 
     if (tournament.format === "round_robin") {
       html += `<h3 style="margin-top:1rem;font-size:15px">Klasemen</h3>`;
@@ -1638,10 +1678,10 @@ async function renderTournamentDetail(container) {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">🏆 Babak Knockout</h3>`;
         html += buildBracketDiagramHtml(knockoutMatches, isAdmin, true, currentPlayerId);
       }
-    } else if (tournament.format === "cappuccino") {
+    } else if (tournament.format === "cappuccino" || tournament.format === "cappuccino_external") {
       html += `<h3 style="margin-top:1rem;font-size:15px">☕ Peringkat Individu</h3>`;
-      html += `<table class="lb-table"><thead><tr><th>#</th><th>Peserta</th><th>Poin</th><th>Menang</th><th>Game Menang</th></tr></thead><tbody>`;
-      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}</td><td>+${r.points}</td><td>${r.wins}</td><td>${r.gamesWon}</td></tr>`; });
+      html += `<table class="lb-table"><thead><tr><th>#</th><th>Peserta</th><th>Menang</th><th>Poin</th><th>Game Menang</th></tr></thead><tbody>`;
+      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}</td><td>${r.wins}</td><td>+${r.points}</td><td>${r.gamesWon}</td></tr>`; });
       html += `</tbody></table>`;
       cappuccinoRounds.forEach((rd) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Ronde ${rd.round}</h3>`;
