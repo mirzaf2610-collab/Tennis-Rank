@@ -38,7 +38,8 @@ function standardSeedOrder(size) {
 
 function participantLabel(p) {
   if (!p) return null;
-  return p.player2 ? `${p.player1.name}/${p.player2.name}` : p.player1.name;
+  const name1 = p.player1 ? p.player1.name : (p.guestName || "?");
+  return p.player2 ? `${name1}/${p.player2.name}` : name1;
 }
 
 function shuffleArray(arr) {
@@ -196,18 +197,18 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
 // Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
   const { name, format, type, participantIds, numGroups, numCourts, numRounds } = req.body;
-  const tType = format === "cappuccino" ? "doubles" : (type === "doubles" ? "doubles" : "singles");
+  const tType = (format === "cappuccino" || format === "cappuccino_external") ? "doubles" : (type === "doubles" ? "doubles" : "singles");
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
     return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Nama, format, dan minimal 2 peserta wajib diisi" } });
   }
-  if (!["round_robin", "bracket", "group_knockout", "cappuccino"].includes(format)) {
+  if (!["round_robin", "bracket", "group_knockout", "cappuccino", "cappuccino_external"].includes(format)) {
     return res.status(400).json({ error: { code: "INVALID_FORMAT", message: "Format tidak valid" } });
   }
   if (format === "group_knockout" && (!numGroups || numGroups < 2)) {
     return res.status(400).json({ error: { code: "INVALID_GROUPS", message: "Jumlah grup minimal 2" } });
   }
-  if (format === "cappuccino") {
+  if (format === "cappuccino" || format === "cappuccino_external") {
     if (participantIds.length < 4) {
       return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "Sistem Cappuccino butuh minimal 4 peserta" } });
     }
@@ -217,13 +218,31 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
     if (numRounds != null && (!Number.isInteger(numRounds) || numRounds < 1 || numRounds > 30)) {
       return res.status(400).json({ error: { code: "INVALID_ROUNDS", message: "Jumlah ronde harus bilangan bulat 1-30" } });
     }
+    // Peserta tamu (nama manual, bukan pemain terdaftar) cuma boleh di Sistem Cappuccino
+    // External -- Sistem Cappuccino biasa perlu semua peserta terdaftar karena hasilnya
+    // pengaruh ke rating.
+    const hasGuestEntry = participantIds.some((p) => typeof p === "object" && p !== null);
+    if (hasGuestEntry && format !== "cappuccino_external") {
+      return res.status(400).json({ error: { code: "GUEST_NOT_ALLOWED", message: "Peserta tamu (nama manual) cuma bisa dipakai di Sistem Cappuccino External" } });
+    }
   }
 
   let normalized;
-  if (format === "cappuccino") {
-    // Sistem Cappuccino: peserta individu (partner ganti-ganti tiap ronde, bukan tim tetap)
-    normalized = participantIds.map((p1) => ({ p1, p2: null }));
-    if (new Set(participantIds).size !== participantIds.length) {
+  if (format === "cappuccino" || format === "cappuccino_external") {
+    // Sistem Cappuccino: peserta individu (partner ganti-ganti tiap ronde, bukan tim tetap).
+    // Entry bisa berupa angka (playerId, pemain terdaftar) atau { guestName } (khusus External).
+    normalized = participantIds.map((entry) => {
+      if (typeof entry === "object" && entry !== null) {
+        const guestName = String(entry.guestName || "").trim();
+        return { p1: null, p2: null, guestName: guestName || null };
+      }
+      return { p1: entry, p2: null, guestName: null };
+    });
+    if (normalized.some((e) => e.p1 == null && !e.guestName)) {
+      return res.status(400).json({ error: { code: "INVALID_PARTICIPANT", message: "Nama peserta tamu tidak boleh kosong" } });
+    }
+    const numericIds = normalized.filter((e) => e.p1 != null).map((e) => e.p1);
+    if (new Set(numericIds).size !== numericIds.length) {
       return res.status(400).json({ error: { code: "DUPLICATE_PARTICIPANT", message: "Peserta tidak boleh dobel" } });
     }
   } else if (tType === "doubles") {
@@ -250,7 +269,7 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
       for (let i = 0; i < normalized.length; i++) {
         const groupNumber = format === "group_knockout" ? (i % numGroups) + 1 : null;
         const cp = await tx.tournamentParticipant.create({
-          data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, seed: i + 1, groupNumber },
+          data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, guestName: normalized[i].guestName || null, seed: i + 1, groupNumber },
         });
         createdParticipants.push(cp);
       }
@@ -259,7 +278,7 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
         await generateRoundRobinMatches(tx, t.id, createdParticipants.map((p) => p.id), "main", null);
       } else if (format === "bracket") {
         await generateBracketMatches(tx, t.id, createdParticipants.map((p) => p.id), "main");
-      } else if (format === "cappuccino") {
+      } else if (format === "cappuccino" || format === "cappuccino_external") {
         const participantIdsOnly = createdParticipants.map((p) => p.id);
         // Kalau admin sudah pilih jumlah ronde sendiri, pakai itu. Kalau tidak diisi,
         // baru fallback ke rumus "ideal" (jaminan semua pemain main sama rata).
@@ -484,6 +503,8 @@ router.get("/tournaments/:id", async (req, res) => {
         score = `${s.targetGames}-${s.loserGames}`;
       } else if (m.doublesMatchId && doublesScoreById[m.doublesMatchId]) {
         score = `6-${doublesScoreById[m.doublesMatchId].loserGames}`;
+      } else if (m.externalLoserGames != null) {
+        score = `6-${m.externalLoserGames}`;
       }
       // Untuk Cappuccino, gabungkan label participant1+1b jadi 1 nama tim "A/B"
       const team1Label = m.participant1b
@@ -538,7 +559,7 @@ router.get("/tournaments/:id", async (req, res) => {
       knockoutMatches = knockoutRaw.length > 0 ? knockoutRaw.map(toOut) : null;
       const pendingGroup = matches.filter((m) => m.stage === "group" && m.status === "pending").length;
       canStartKnockout = pendingGroup === 0 && knockoutRaw.length === 0;
-    } else if (tournament.format === "cappuccino") {
+    } else if (tournament.format === "cappuccino" || tournament.format === "cappuccino_external") {
       // Kelompokkan match per ronde buat ditampilkan
       const roundNumbers = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
       cappuccinoRounds = roundNumbers.map((r) => ({
@@ -547,8 +568,12 @@ router.get("/tournaments/:id", async (req, res) => {
       }));
 
       // Hitung poin individu: menang = +selisih game, kalah = +0. Berlaku utk kedua anggota tim.
-      // Tie-breaker kalau poin sama: 1) total menang, 2) total game yang dimenangkan (bukan head-to-head,
-      // karena partner acak tiap ronde jadi 2 orang bisa saja tidak pernah lawan-lawanan langsung).
+      // Urutan ranking: 1) total menang (sinyal utama -- makin sering menang makin unggul),
+      // 2) poin/margin kemenangan (pembeda kalau jumlah menang sama), 3) total game yang
+      // dimenangkan (pembeda terakhir; bukan head-to-head karena partner acak tiap ronde jadi
+      // 2 orang bisa saja tidak pernah lawan-lawanan langsung).
+      // Untuk Cappuccino External, loserGames diambil langsung dari externalLoserGames (bukan
+      // dari DoublesMatch, karena memang tidak ada Match/DoublesMatch yang dibuat sama sekali).
       const points = {};
       const winsCount = {};
       const gamesWon = {};
@@ -558,8 +583,9 @@ router.get("/tournaments/:id", async (req, res) => {
         labelByParticipant[p.id] = participantLabel(p);
       });
 
-      matches.filter((m) => m.status === "completed" && m.doublesMatchId && doublesScoreById[m.doublesMatchId]).forEach((m) => {
-        const loserGames = doublesScoreById[m.doublesMatchId].loserGames;
+      matches.filter((m) => m.status === "completed").forEach((m) => {
+        const loserGames = m.doublesMatchId ? doublesScoreById[m.doublesMatchId]?.loserGames : m.externalLoserGames;
+        if (loserGames == null) return;
         const margin = 6 - loserGames;
         const winIsTeam1 = m.winnerParticipantId === m.participant1Id;
         const winnerIds = winIsTeam1 ? [m.participant1Id, m.participant1bId] : [m.participant2Id, m.participant2bId];
@@ -581,7 +607,7 @@ router.get("/tournaments/:id", async (req, res) => {
           participantId: p.id, label: labelByParticipant[p.id],
           points: points[p.id] || 0, wins: winsCount[p.id] || 0, gamesWon: gamesWon[p.id] || 0,
         }))
-        .sort((a, b) => b.points - a.points || b.wins - a.wins || b.gamesWon - a.gamesWon);
+        .sort((a, b) => b.wins - a.wins || b.points - a.points || b.gamesWon - a.gamesWon);
     }
 
     res.json({
@@ -675,6 +701,22 @@ async function submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, l
           ],
         });
         await tx.tournamentMatch.update({ where: { id: tmId }, data: { winnerParticipantId, singleMatchId: match.id, status: "completed" } });
+      } else if (tournament.format === "cappuccino_external") {
+        // Sistem Cappuccino External: skor dicatat LANGSUNG di TournamentMatch, TIDAK ada
+        // Match/DoublesMatch yang dibuat, TIDAK ada perhitungan ELO/rating sama sekali --
+        // baik peserta terdaftar maupun tamu, hasilnya murni buat leaderboard turnamen ini saja.
+        if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
+          throw Object.assign(new Error("Pemenang harus salah satu dari kedua tim di match ini"), { status: 400 });
+        }
+        if (loserGames == null || loserGames < 0 || loserGames > 5) {
+          throw Object.assign(new Error("Skor harus 0-5"), { status: 400 });
+        }
+        winnerParticipantId = winnerId;
+        elo = null;
+        await tx.tournamentMatch.update({
+          where: { id: tmId },
+          data: { winnerParticipantId, externalLoserGames: loserGames, status: "completed" },
+        });
       } else if (tournament.format === "cappuccino") {
         if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
           throw Object.assign(new Error("Pemenang harus salah satu dari kedua tim di match ini"), { status: 400 });
@@ -950,7 +992,7 @@ router.post("/admin/tournaments/:id/matches/:tmId/correct", requireAuth, require
       // berikutnya (kalau ada) supaya bisa diisi ulang dengan pemenang yang benar
       await tx.tournamentMatch.update({
         where: { id: tmId },
-        data: { winnerParticipantId: null, singleMatchId: null, doublesMatchId: null, status: "pending" },
+        data: { winnerParticipantId: null, singleMatchId: null, doublesMatchId: null, externalLoserGames: null, status: "pending" },
       });
       if (nextMatch) {
         const slotField = tm.matchIndex % 2 === 0 ? "participant1Id" : "participant2Id";
