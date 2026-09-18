@@ -298,9 +298,15 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
       const createdParticipants = [];
       for (let i = 0; i < normalized.length; i++) {
         const groupNumber = format === "group_knockout" ? (i % numGroups) + 1 : null;
-        const cp = await tx.tournamentParticipant.create({
-          data: { tournamentId: t.id, player1Id: normalized[i].p1, player2Id: normalized[i].p2, guestName: normalized[i].guestName || null, seed: i + 1, groupNumber },
-        });
+        // PENTING: jangan kirim player1Id/player2Id/guestName sebagai `null` eksplisit --
+        // Prisma bisa salah menginterpretasikan create() jadi butuh objek relasi `tournament`
+        // penuh (bukan cukup tournamentId) kalau ada FK opsional yang di-null-kan eksplisit.
+        // Aman: cuma sertakan field itu kalau memang ada isinya, biarkan default undefined kalau tidak.
+        const participantData = { tournamentId: t.id, seed: i + 1, groupNumber };
+        if (normalized[i].p1 != null) participantData.player1Id = normalized[i].p1;
+        if (normalized[i].p2 != null) participantData.player2Id = normalized[i].p2;
+        if (normalized[i].guestName) participantData.guestName = normalized[i].guestName;
+        const cp = await tx.tournamentParticipant.create({ data: participantData });
         createdParticipants.push(cp);
       }
 
