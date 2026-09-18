@@ -96,19 +96,24 @@ function pairUpRound(playersInRound, partnerCount, key) {
 // Bangun jadwal lengkap Sistem Cappuccino: rotasi partner otomatis, istirahat merata.
 // participantIds = daftar ID peserta INDIVIDU (bukan tim, karena partner ganti-ganti tiap ronde).
 // Return: array of { round, matches: [{p1, p1b, p2, p2b}] }
-function generateCappuccinoSchedule(participantIds, numCourts, numRounds) {
+// courtsPerRound: array jumlah lapangan tiap ronde (misal [2,2,2,2,2,2,2,1]) -- boleh beda-beda
+// tiap ronde, dipakai buat "Rata Sempurna" (mix jumlah lapangan supaya total main per peserta
+// pas rata tanpa nambah total ronde). Panggilan lama (numCourts tetap tiap ronde) tinggal kirim
+// array isi angka yang sama berulang sepanjang numRounds.
+function generateCappuccinoSchedule(participantIds, courtsPerRound) {
   const n = participantIds.length;
-  let active = Math.min(n, numCourts * 4);
-  active = active - (active % 4);
-  const sitOutNeeded = n - active;
-
   const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
   const partnerCount = {};
   const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
   participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) partnerCount[key(a, b)] = 0; }));
 
   const schedule = [];
-  for (let r = 1; r <= numRounds; r++) {
+  courtsPerRound.forEach((courts, idx) => {
+    const r = idx + 1;
+    let active = Math.min(n, courts * 4);
+    active = active - (active % 4);
+    const sitOutNeeded = n - active;
+
     const sorted = shuffleArray(participantIds).sort((a, b) => sitOutCount[a] - sitOutCount[b]);
     const sittingOut = sorted.slice(0, sitOutNeeded);
     const playing = participantIds.filter((p) => !sittingOut.includes(p));
@@ -124,8 +129,25 @@ function generateCappuccinoSchedule(participantIds, numCourts, numRounds) {
       }
     }
     schedule.push({ round: r, matches });
-  }
+  });
   return schedule;
+}
+
+// Hitung susunan jumlah-lapangan-per-ronde yang bikin SEMUA peserta main TEPAT `target` kali,
+// dengan total ronde paling sedikit (boleh campur 1 & 2 lapangan per ronde) -- dipakai mode
+// "Rata Sempurna". Cuma bisa persis rata kalau (n * target) habis dibagi 4 (karena tiap match
+// butuh persis 4 slot main); kalau tidak, return null (mode ini tidak berlaku, fallback ke mode biasa).
+function computeFairMixedRounds(n, maxCourts, target) {
+  const totalSlotsNeeded = n * target;
+  if (totalSlotsNeeded % 4 !== 0) return null;
+  let remainingCourts = totalSlotsNeeded / 4; // total "unit lapangan" (1 unit = 1 match = 4 slot)
+  const roundCourts = [];
+  while (remainingCourts > 0) {
+    const courts = Math.min(maxCourts, remainingCourts);
+    roundCourts.push(courts);
+    remainingCourts -= courts;
+  }
+  return roundCourts;
 }
 
 // Buat match round-robin (semua lawan semua) untuk sekelompok participantId.
@@ -196,7 +218,7 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
 // Untuk Single, participantIds berisi array id biasa: [id1, id2, id3, ...]
 // Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
-  const { name, format, type, participantIds, numGroups, numCourts, numRounds } = req.body;
+  const { name, format, type, participantIds, numGroups, numCourts, numRounds, roundCourts } = req.body;
   const tType = (format === "cappuccino" || format === "cappuccino_external") ? "doubles" : (type === "doubles" ? "doubles" : "singles");
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
@@ -217,6 +239,14 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
     }
     if (numRounds != null && (!Number.isInteger(numRounds) || numRounds < 1 || numRounds > 30)) {
       return res.status(400).json({ error: { code: "INVALID_ROUNDS", message: "Jumlah ronde harus bilangan bulat 1-30" } });
+    }
+    // Mode "Rata Sempurna": roundCourts = susunan jumlah lapangan per ronde (boleh campur).
+    if (roundCourts != null) {
+      const validArray = Array.isArray(roundCourts) && roundCourts.length > 0 && roundCourts.length <= 30
+        && roundCourts.every((c) => Number.isInteger(c) && c >= 1 && c <= numCourts);
+      if (!validArray) {
+        return res.status(400).json({ error: { code: "INVALID_ROUND_COURTS", message: "Susunan lapangan per ronde tidak valid" } });
+      }
     }
     // Peserta tamu (nama manual, bukan pemain terdaftar) cuma boleh di Sistem Cappuccino
     // External -- Sistem Cappuccino biasa perlu semua peserta terdaftar karena hasilnya
@@ -280,12 +310,20 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
         await generateBracketMatches(tx, t.id, createdParticipants.map((p) => p.id), "main");
       } else if (format === "cappuccino" || format === "cappuccino_external") {
         const participantIdsOnly = createdParticipants.map((p) => p.id);
-        // Kalau admin sudah pilih jumlah ronde sendiri, pakai itu. Kalau tidak diisi,
-        // baru fallback ke rumus "ideal" (jaminan semua pemain main sama rata).
-        const roundsToUse = Number.isInteger(numRounds) && numRounds > 0
-          ? numRounds
-          : computeIdealRounds(participantIdsOnly.length, numCourts);
-        const schedule = generateCappuccinoSchedule(participantIdsOnly, numCourts, roundsToUse);
+        let courtsPerRound;
+        if (Array.isArray(roundCourts) && roundCourts.length > 0) {
+          // Mode "Rata Sempurna": susunan lapangan per ronde sudah dihitung & dikirim frontend
+          // (boleh campur 1-2 lapangan per ronde supaya total main per peserta pas rata).
+          courtsPerRound = roundCourts;
+        } else {
+          // Mode biasa: jumlah lapangan sama tiap ronde. Kalau admin sudah pilih jumlah ronde
+          // sendiri, pakai itu. Kalau tidak diisi, fallback ke rumus "ideal" (jamin semua rata).
+          const roundsToUse = Number.isInteger(numRounds) && numRounds > 0
+            ? numRounds
+            : computeIdealRounds(participantIdsOnly.length, numCourts);
+          courtsPerRound = Array(roundsToUse).fill(numCourts);
+        }
+        const schedule = generateCappuccinoSchedule(participantIdsOnly, courtsPerRound);
         for (const { round, matches } of schedule) {
           for (let mi = 0; mi < matches.length; mi++) {
             const m = matches[mi];
