@@ -972,6 +972,8 @@ async function renderAdmin(container) {
           <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-rounds-estimate">Tambah peserta dulu buat lihat perkiraan.</p>
         </div>
         <p class="muted" style="font-size:12px;margin-top:-0.5rem">Tidak perlu main bersamaan real-time — ini cuma menentukan berapa match yang dijadwalkan.</p>
+        <button id="tourney-simulate-btn" type="button" class="btn secondary" style="margin-top:0.5rem">🔍 Simulasikan Dulu</button>
+        <div id="tourney-simulate-result" style="display:none;margin-top:0.5rem;background:#f7f7f5;border-radius:8px;padding:10px;font-size:13px"></div>
       </div>
       <label style="margin-top:0.5rem">Susun peserta (urutan = posisi/seed, bisa diatur naik-turun)</label>
       <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-participant-hint">Untuk Bracket/Setengah Kompetisi, urutan ini menentukan posisi peserta di bagan.</p>
@@ -1096,9 +1098,131 @@ async function renderAdmin(container) {
     tournamentCreateWrap.querySelector("#tourney-manual-rounds-wrap").style.display = mode === "manual" ? "block" : "none";
   }
   tournamentCreateWrap.querySelector("#tourney-rounds-mode").addEventListener("change", toggleRoundsMode);
-  tournamentCreateWrap.querySelector("#tourney-target-plays").addEventListener("input", updateRoundsEstimate);
-  tournamentCreateWrap.querySelector("#tourney-num-courts").addEventListener("change", updateRoundsEstimate);
+  tournamentCreateWrap.querySelector("#tourney-target-plays").addEventListener("input", () => {
+    updateRoundsEstimate();
+    tournamentCreateWrap.querySelector("#tourney-simulate-result").style.display = "none";
+  });
+  tournamentCreateWrap.querySelector("#tourney-num-courts").addEventListener("change", () => {
+    updateRoundsEstimate();
+    tournamentCreateWrap.querySelector("#tourney-simulate-result").style.display = "none";
+  });
   toggleRoundsMode();
+
+  // --- Simulasi jadwal Cappuccino di sisi client, PERSIS meniru algoritma backend
+  // (src/routes/tournaments.js: gcd/pairUpRound/generateCappuccinoSchedule/computeIdealRounds)
+  // supaya admin bisa cek dulu berapa ronde/match yang bakal kejadi SEBELUM benar-benar
+  // membuat turnamennya -- terutama buat nangkep kasus kayak "1 lapangan" yang bisa bikin
+  // rondenya membengkak jauh dari perkiraan.
+  function simGcd(a, b) { return b === 0 ? a : simGcd(b, a % b); }
+  function simShuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  function simComputeIdealRounds(n, numCourts) {
+    let active = Math.min(n, numCourts * 4);
+    active = active - (active % 4);
+    const sitOutPerRound = n - active;
+    if (sitOutPerRound === 0) return Math.max(4, Math.ceil(n / 2));
+    const g = simGcd(n, sitOutPerRound);
+    let rounds = n / g;
+    while (rounds < 5) rounds += n / g;
+    while (rounds > 12) rounds -= n / g;
+    return rounds;
+  }
+  function simPairUpRound(playersInRound, partnerCount, key) {
+    let best = null, bestRepeats = Infinity;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const remaining = simShuffle(playersInRound);
+      const teams = [];
+      let repeats = 0;
+      while (remaining.length > 0) {
+        const a = remaining.shift();
+        let bestIdx = 0, bestCount = Infinity;
+        remaining.forEach((b, idx) => {
+          const c = partnerCount[key(a, b)];
+          if (c < bestCount) { bestCount = c; bestIdx = idx; }
+        });
+        const b = remaining.splice(bestIdx, 1)[0];
+        if (partnerCount[key(a, b)] > 0) repeats++;
+        teams.push([a, b]);
+      }
+      if (repeats < bestRepeats) { bestRepeats = repeats; best = teams; }
+      if (bestRepeats === 0) break;
+    }
+    return best;
+  }
+  function simGenerateSchedule(participantIds, numCourts, numRounds) {
+    const n = participantIds.length;
+    let active = Math.min(n, numCourts * 4);
+    active = active - (active % 4);
+    const sitOutNeeded = n - active;
+    const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
+    const partnerCount = {};
+    const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
+    participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) partnerCount[key(a, b)] = 0; }));
+    const schedule = [];
+    for (let r = 1; r <= numRounds; r++) {
+      const sorted = simShuffle(participantIds).sort((a, b) => sitOutCount[a] - sitOutCount[b]);
+      const sittingOut = sorted.slice(0, sitOutNeeded);
+      const playing = participantIds.filter((p) => !sittingOut.includes(p));
+      sittingOut.forEach((p) => sitOutCount[p]++);
+      const teams = simPairUpRound(playing, partnerCount, key);
+      teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
+      const matches = [];
+      for (let i = 0; i < teams.length; i += 2) {
+        if (teams[i + 1]) matches.push([teams[i], teams[i + 1]]);
+      }
+      schedule.push({ round: r, matches, sittingOut });
+    }
+    return { schedule, active, sitOutNeeded };
+  }
+
+  tournamentCreateWrap.querySelector("#tourney-simulate-btn").addEventListener("click", () => {
+    const resultEl = tournamentCreateWrap.querySelector("#tourney-simulate-result");
+    const n = participantEntries.length;
+    if (n < 4) {
+      resultEl.style.display = "block";
+      resultEl.innerHTML = `<span class="muted">Tambah peserta dulu (minimal 4) buat bisa disimulasikan.</span>`;
+      return;
+    }
+    const numCourts = Number(tournamentCreateWrap.querySelector("#tourney-num-courts").value) || 1;
+    const roundsMode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
+    const targetPlays = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value);
+    const numRounds = roundsMode === "manual" && Number.isInteger(targetPlays) && targetPlays > 0
+      ? computeRoundsFromTarget(n, numCourts, targetPlays)
+      : simComputeIdealRounds(n, numCourts);
+
+    const ids = participantEntries.map((_, i) => i + 1);
+    const names = Object.fromEntries(participantEntries.map((e, i) => [i + 1, e.p1Name]));
+    const { schedule, active, sitOutNeeded } = simGenerateSchedule(ids, numCourts, numRounds);
+
+    const playCount = Object.fromEntries(ids.map((p) => [p, 0]));
+    let totalMatches = 0;
+    schedule.forEach(({ matches }) => {
+      totalMatches += matches.length;
+      matches.forEach(([team1, team2]) => {
+        [...team1, ...team2].forEach((p) => playCount[p]++);
+      });
+    });
+    const counts = Object.values(playCount);
+    const minPlay = Math.min(...counts), maxPlay = Math.max(...counts);
+    const playRangeText = minPlay === maxPlay ? `tepat ${minPlay}x` : `${minPlay}-${maxPlay}x`;
+
+    const perPlayerRows = ids
+      .map((p) => `<span style="display:inline-block;margin:2px 8px 2px 0">${names[p]}: <strong>${playCount[p]}x</strong></span>`)
+      .join("");
+
+    resultEl.style.display = "block";
+    resultEl.innerHTML = `
+      <div style="margin-bottom:6px"><strong>${numRounds} ronde</strong>, total <strong>${totalMatches} match</strong> (${active} main / ${sitOutNeeded} istirahat tiap ronde) — tiap peserta main ${playRangeText}.</div>
+      <div style="margin-bottom:6px">Detail per peserta:<br/>${perPlayerRows}</div>
+      <p class="muted" style="font-size:11px;margin:0">Catatan: ini simulasi pasangan/jadwal acak -- pasangan sebenarnya nanti (pas turnamen benar-benar dibuat) bisa beda kombinasi, tapi jumlah ronde &amp; sebaran main per orang akan sama.</p>
+    `;
+  });
 
   function toggleTourneyTypeSection() {
     const cappuccino = isCappuccino();
