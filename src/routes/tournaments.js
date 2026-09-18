@@ -70,12 +70,47 @@ function computeIdealRounds(n, numCourts) {
 }
 
 // Coba beberapa kali urutan acak, ambil yang PALING SEDIKIT partner berulang
-function pairUpRound(playersInRound, partnerCount, key) {
-  let best = null, bestRepeats = Infinity;
-  for (let attempt = 0; attempt < 40; attempt++) {
+// Susun tim-tim yang sudah terbentuk jadi match tim-vs-tim, DIUTAMAKAN supaya tiap orang
+// belum pernah ketemu sebagai LAWAN sebelumnya. Kalau memang sudah tidak ada pilihan lain
+// (semua kombinasi sudah pernah ketemu), tetap jalan -- ini best-effort, bukan syarat mutlak.
+// Return { matches, cost } -- cost dipakai buildRoundMatches buat bandingkan opsi split partner.
+function pairTeamsIntoMatches(teamsList, opponentCount, key) {
+  const crossCost = (t1, t2) => (
+    opponentCount[key(t1[0], t2[0])] + opponentCount[key(t1[0], t2[1])]
+    + opponentCount[key(t1[1], t2[0])] + opponentCount[key(t1[1], t2[1])]
+  );
+  let best = null, bestCost = Infinity;
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const remaining = shuffleArray(teamsList);
+    const matches = [];
+    let cost = 0;
+    while (remaining.length > 1) {
+      const t1 = remaining.shift();
+      let bestIdx = 0, bIdxCost = Infinity;
+      remaining.forEach((t2, idx) => {
+        const c = crossCost(t1, t2);
+        if (c < bIdxCost) { bIdxCost = c; bestIdx = idx; }
+      });
+      const t2 = remaining.splice(bestIdx, 1)[0];
+      cost += bIdxCost;
+      matches.push([t1, t2]);
+    }
+    if (cost < bestCost) { bestCost = cost; best = matches; }
+    if (bestCost === 0) break;
+  }
+  return { matches: best, cost: bestCost };
+}
+
+// Bentuk 1 ronde penuh (partner + lawan) SEKALIGUS -- coba banyak kombinasi split partner,
+// tiap kombinasi dicoba dipasangkan jadi match (pairTeamsIntoMatches) dan skornya dibandingkan.
+// Prioritas: 1) jangan sampai ada partner yang berulang (mahal banget kalau kejadian),
+// 2) di antara opsi yang partnernya sudah oke, pilih yang lawannya paling sedikit berulang.
+function buildRoundMatches(playersInRound, partnerCount, opponentCount, key) {
+  let best = null, bestScore = Infinity;
+  for (let attempt = 0; attempt < 60; attempt++) {
     const remaining = shuffleArray(playersInRound);
     const teams = [];
-    let repeats = 0;
+    let partnerRepeats = 0;
     while (remaining.length > 0) {
       const a = remaining.shift();
       let bestIdx = 0, bestCount = Infinity;
@@ -84,16 +119,19 @@ function pairUpRound(playersInRound, partnerCount, key) {
         if (c < bestCount) { bestCount = c; bestIdx = idx; }
       });
       const b = remaining.splice(bestIdx, 1)[0];
-      if (partnerCount[key(a, b)] > 0) repeats++;
+      if (partnerCount[key(a, b)] > 0) partnerRepeats++;
       teams.push([a, b]);
     }
-    if (repeats < bestRepeats) { bestRepeats = repeats; best = teams; }
-    if (bestRepeats === 0) break;
+    const { matches, cost } = pairTeamsIntoMatches(teams, opponentCount, key);
+    const score = partnerRepeats * 1000 + cost; // hindari partner berulang jauh lebih diutamakan
+    if (score < bestScore) { bestScore = score; best = { teams, matches }; }
+    if (bestScore === 0) break;
   }
   return best;
 }
 
-// Bangun jadwal lengkap Sistem Cappuccino: rotasi partner otomatis, istirahat merata.
+// Bangun jadwal lengkap Sistem Cappuccino: rotasi partner otomatis, istirahat merata, dan
+// sebisa mungkin tiap peserta ketemu LAWAN yang berbeda-beda juga (bukan cuma partner).
 // participantIds = daftar ID peserta INDIVIDU (bukan tim, karena partner ganti-ganti tiap ronde).
 // Return: array of { round, matches: [{p1, p1b, p2, p2b}] }
 // courtsPerRound: array jumlah lapangan tiap ronde (misal [2,2,2,2,2,2,2,1]) -- boleh beda-beda
@@ -104,8 +142,9 @@ function generateCappuccinoSchedule(participantIds, courtsPerRound) {
   const n = participantIds.length;
   const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
   const partnerCount = {};
+  const opponentCount = {};
   const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
-  participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) partnerCount[key(a, b)] = 0; }));
+  participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) { partnerCount[key(a, b)] = 0; opponentCount[key(a, b)] = 0; } }));
 
   const schedule = [];
   courtsPerRound.forEach((courts, idx) => {
@@ -119,15 +158,15 @@ function generateCappuccinoSchedule(participantIds, courtsPerRound) {
     const playing = participantIds.filter((p) => !sittingOut.includes(p));
     sittingOut.forEach((p) => sitOutCount[p]++);
 
-    const teams = pairUpRound(playing, partnerCount, key);
+    const { teams, matches: teamMatches } = buildRoundMatches(playing, partnerCount, opponentCount, key);
     teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
 
     const matches = [];
-    for (let i = 0; i < teams.length; i += 2) {
-      if (teams[i + 1]) {
-        matches.push({ p1: teams[i][0], p1b: teams[i][1], p2: teams[i + 1][0], p2b: teams[i + 1][1] });
-      }
-    }
+    teamMatches.forEach(([t1, t2]) => {
+      opponentCount[key(t1[0], t2[0])]++; opponentCount[key(t1[0], t2[1])]++;
+      opponentCount[key(t1[1], t2[0])]++; opponentCount[key(t1[1], t2[1])]++;
+      matches.push({ p1: t1[0], p1b: t1[1], p2: t2[0], p2b: t2[1] });
+    });
     schedule.push({ round: r, matches });
   });
   return schedule;
