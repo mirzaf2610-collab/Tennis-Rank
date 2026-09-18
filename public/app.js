@@ -1177,12 +1177,38 @@ async function renderAdmin(container) {
     while (rounds > 12) rounds -= n / g;
     return rounds;
   }
-  function simPairUpRound(playersInRound, partnerCount, key) {
-    let best = null, bestRepeats = Infinity;
-    for (let attempt = 0; attempt < 40; attempt++) {
+  function simPairTeamsIntoMatches(teamsList, opponentCount, key) {
+    const crossCost = (t1, t2) => (
+      opponentCount[key(t1[0], t2[0])] + opponentCount[key(t1[0], t2[1])]
+      + opponentCount[key(t1[1], t2[0])] + opponentCount[key(t1[1], t2[1])]
+    );
+    let best = null, bestCost = Infinity;
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const remaining = simShuffle(teamsList);
+      const matches = [];
+      let cost = 0;
+      while (remaining.length > 1) {
+        const t1 = remaining.shift();
+        let bestIdx = 0, bIdxCost = Infinity;
+        remaining.forEach((t2, idx) => {
+          const c = crossCost(t1, t2);
+          if (c < bIdxCost) { bIdxCost = c; bestIdx = idx; }
+        });
+        const t2 = remaining.splice(bestIdx, 1)[0];
+        cost += bIdxCost;
+        matches.push([t1, t2]);
+      }
+      if (cost < bestCost) { bestCost = cost; best = matches; }
+      if (bestCost === 0) break;
+    }
+    return { matches: best, cost: bestCost };
+  }
+  function simBuildRoundMatches(playersInRound, partnerCount, opponentCount, key) {
+    let best = null, bestScore = Infinity;
+    for (let attempt = 0; attempt < 60; attempt++) {
       const remaining = simShuffle(playersInRound);
       const teams = [];
-      let repeats = 0;
+      let partnerRepeats = 0;
       while (remaining.length > 0) {
         const a = remaining.shift();
         let bestIdx = 0, bestCount = Infinity;
@@ -1191,11 +1217,13 @@ async function renderAdmin(container) {
           if (c < bestCount) { bestCount = c; bestIdx = idx; }
         });
         const b = remaining.splice(bestIdx, 1)[0];
-        if (partnerCount[key(a, b)] > 0) repeats++;
+        if (partnerCount[key(a, b)] > 0) partnerRepeats++;
         teams.push([a, b]);
       }
-      if (repeats < bestRepeats) { bestRepeats = repeats; best = teams; }
-      if (bestRepeats === 0) break;
+      const { matches, cost } = simPairTeamsIntoMatches(teams, opponentCount, key);
+      const score = partnerRepeats * 1000 + cost;
+      if (score < bestScore) { bestScore = score; best = { teams, matches }; }
+      if (bestScore === 0) break;
     }
     return best;
   }
@@ -1203,8 +1231,9 @@ async function renderAdmin(container) {
     const n = participantIds.length;
     const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
     const partnerCount = {};
+    const opponentCount = {};
     const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
-    participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) partnerCount[key(a, b)] = 0; }));
+    participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) { partnerCount[key(a, b)] = 0; opponentCount[key(a, b)] = 0; } }));
     const schedule = [];
     courtsPerRound.forEach((courts, idx) => {
       let active = Math.min(n, courts * 4);
@@ -1214,12 +1243,14 @@ async function renderAdmin(container) {
       const sittingOut = sorted.slice(0, sitOutNeeded);
       const playing = participantIds.filter((p) => !sittingOut.includes(p));
       sittingOut.forEach((p) => sitOutCount[p]++);
-      const teams = simPairUpRound(playing, partnerCount, key);
+      const { teams, matches: teamMatches } = simBuildRoundMatches(playing, partnerCount, opponentCount, key);
       teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
       const matches = [];
-      for (let i = 0; i < teams.length; i += 2) {
-        if (teams[i + 1]) matches.push([teams[i], teams[i + 1]]);
-      }
+      teamMatches.forEach(([t1, t2]) => {
+        opponentCount[key(t1[0], t2[0])]++; opponentCount[key(t1[0], t2[1])]++;
+        opponentCount[key(t1[1], t2[0])]++; opponentCount[key(t1[1], t2[1])]++;
+        matches.push([t1, t2]);
+      });
       schedule.push({ round: idx + 1, matches, sittingOut });
     });
     return { schedule };
