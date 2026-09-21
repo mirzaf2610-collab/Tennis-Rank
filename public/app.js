@@ -971,7 +971,7 @@ async function renderAdmin(container) {
           <input id="tourney-target-plays" type="number" min="1" max="30" value="4" />
           <label style="font-size:12px;display:flex;align-items:center;gap:6px;margin-top:0.4rem;font-weight:normal">
             <input id="tourney-fair-mix" type="checkbox" style="width:auto" />
-            Rata Sempurna (boleh campur jumlah lapangan per ronde, semua main persis sama)
+            Rata Sempurna (semua peserta dijamin PERSIS segini kali main, pakai Golden Round kalau perlu)
           </label>
           <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-rounds-estimate">Tambah peserta dulu buat lihat perkiraan.</p>
         </div>
@@ -1072,20 +1072,26 @@ async function renderAdmin(container) {
     return Math.max(1, Math.round((target * n) / active));
   }
 
-  // Hitung susunan jumlah-lapangan-per-ronde yang bikin SEMUA peserta main TEPAT `target` kali,
-  // total ronde paling sedikit, boleh campur 1 & 2 lapangan per ronde. Cuma bisa persis rata
-  // kalau (n * target) habis dibagi 4 (tiap match butuh persis 4 slot main); kalau tidak, null.
-  function computeFairMixedRounds(n, maxCourts, target) {
+  // Hitung perkiraan (matematis, tanpa simulasi jadwal penuh) untuk mode "Rata Sempurna":
+  // berapa ronde penuh + apakah perlu ronde tambahan "Golden Round", dan berapa peserta yang
+  // bakal jadi "pengisi" (sudah capai target, dipanggil lagi biar formatnya tetap ganda normal).
+  function estimateFairGolden(n, maxCourts, target) {
+    let active = Math.min(n, maxCourts * 4);
+    active = active - (active % 4);
+    if (active <= 0) return null;
     const totalSlotsNeeded = n * target;
-    if (totalSlotsNeeded % 4 !== 0) return null;
-    let remaining = totalSlotsNeeded / 4;
-    const roundCourts = [];
-    while (remaining > 0) {
-      const courts = Math.min(maxCourts, remaining);
-      roundCourts.push(courts);
-      remaining -= courts;
+    const fullRounds = Math.floor(totalSlotsNeeded / active);
+    const leftoverCount = totalSlotsNeeded - fullRounds * active;
+    let extraRounds = 0;
+    let fillerCount = 0;
+    if (leftoverCount > 0) {
+      extraRounds = 1;
+      let pool = leftoverCount;
+      if (pool % 2 !== 0) { pool += 1; fillerCount += 1; }
+      const teams = pool / 2;
+      if (teams % 2 !== 0) fillerCount += 2;
     }
-    return roundCourts;
+    return { fullRounds, extraRounds, totalRounds: fullRounds + extraRounds, leftoverCount, fillerCount };
   }
 
   function updateRoundsEstimate() {
@@ -1101,19 +1107,11 @@ async function renderAdmin(container) {
     const fairMix = tournamentCreateWrap.querySelector("#tourney-fair-mix").checked;
 
     if (fairMix) {
-      const roundCourts = computeFairMixedRounds(n, numCourts, target);
-      if (!roundCourts) {
-        // Cari target terdekat (naik/turun) yang bisa rata persis, buat disarankan ke admin
-        let suggestion = null;
-        for (let d = 1; d <= 4 && !suggestion; d++) {
-          if (target - d >= 1 && ((n * (target - d)) % 4 === 0)) suggestion = target - d;
-          else if ((n * (target + d)) % 4 === 0) suggestion = target + d;
-        }
-        estimateEl.innerHTML = `⚠️ Target ${target}x tidak bisa dibagi rata persis untuk ${n} peserta (walau lapangan dicampur).${suggestion ? ` Coba target <strong>${suggestion}x</strong>.` : ""}`;
-        return;
-      }
-      const mixNote = new Set(roundCourts).size > 1 ? ` (campur ${[...new Set(roundCourts)].sort((a, b) => b - a).join(" &amp; ")} lapangan)` : "";
-      estimateEl.innerHTML = `-> akan jadi ${roundCourts.length}x ganti pasangan${mixNote}, hasil akhirnya <strong>tepat ${target}x</strong> semua peserta main (dari ${n} peserta)`;
+      const info = estimateFairGolden(n, numCourts, target);
+      const goldenNote = info.fillerCount > 0
+        ? ` (ronde terakhir jadi <strong>Golden Round</strong>: ${info.fillerCount} peserta yang sudah capai target dipanggil lagi cuma buat lengkapi format ganda -- poin mereka di ronde itu TIDAK dihitung ke turnamen, tapi rating umum tetap update normal)`
+        : "";
+      estimateEl.innerHTML = `-> akan jadi ${info.totalRounds}x ganti pasangan${info.extraRounds > 0 ? ` (${info.fullRounds} ronde penuh + 1 Golden Round)` : ""}, hasil akhirnya <strong>tepat ${target}x</strong> semua peserta main dihitung ke turnamen${goldenNote}`;
       return;
     }
 
@@ -1222,7 +1220,7 @@ async function renderAdmin(container) {
       }
       const { matches, cost } = simPairTeamsIntoMatches(teams, opponentCount, key);
       const score = partnerRepeats * 1000 + cost;
-      if (score < bestScore) { bestScore = score; best = { teams, matches }; }
+      if (score < bestScore) { bestScore = score; best = { teams, matches, score }; }
       if (bestScore === 0) break;
     }
     return best;
@@ -1256,6 +1254,89 @@ async function renderAdmin(container) {
     return { schedule };
   }
 
+  // Simulasi mode "Rata Sempurna" (meniru generateCappuccinoScheduleFair backend persis):
+  // ronde penuh dulu sebanyak mungkin, sisanya (kalau ada) ditutup pakai Golden Round.
+  function simGenerateScheduleFair(participantIds, maxCourts, target) {
+    const n = participantIds.length;
+    let active = Math.min(n, maxCourts * 4);
+    active = active - (active % 4);
+    const totalSlotsNeeded = n * target;
+    const fullRounds = Math.floor(totalSlotsNeeded / active);
+
+    const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
+    const partnerCount = {};
+    const opponentCount = {};
+    const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
+    participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) { partnerCount[key(a, b)] = 0; opponentCount[key(a, b)] = 0; } }));
+    const playCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
+    const schedule = [];
+
+    const commitMatches = (teamMatches, roundNum, goldenSet) => {
+      const matches = teamMatches.map(([t1, t2]) => {
+        opponentCount[key(t1[0], t2[0])]++; opponentCount[key(t1[0], t2[1])]++;
+        opponentCount[key(t1[1], t2[0])]++; opponentCount[key(t1[1], t2[1])]++;
+        [t1[0], t1[1], t2[0], t2[1]].forEach((p) => playCount[p]++);
+        return {
+          t1, t2,
+          golden1: goldenSet ? goldenSet.has(t1[0]) : false,
+          golden1b: goldenSet ? goldenSet.has(t1[1]) : false,
+          golden2: goldenSet ? goldenSet.has(t2[0]) : false,
+          golden2b: goldenSet ? goldenSet.has(t2[1]) : false,
+        };
+      });
+      schedule.push({ round: roundNum, matches });
+    };
+
+    for (let r = 1; r <= fullRounds; r++) {
+      const sitOutNeeded = n - active;
+      const sorted = simShuffle(participantIds).sort((a, b) => sitOutCount[a] - sitOutCount[b]);
+      const sittingOut = sorted.slice(0, sitOutNeeded);
+      const playing = participantIds.filter((p) => !sittingOut.includes(p));
+      sittingOut.forEach((p) => sitOutCount[p]++);
+      const { teams, matches: teamMatches } = simBuildRoundMatches(playing, partnerCount, opponentCount, key);
+      teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
+      commitMatches(teamMatches, r, null);
+    }
+
+    let leftover = participantIds.filter((p) => playCount[p] < target);
+    let roundNum = fullRounds;
+    while (leftover.length > 0) {
+      roundNum++;
+      const neededTotal = Math.ceil(leftover.length / 4) * 4;
+      const fillersNeeded = Math.max(0, neededTotal - leftover.length);
+      const satisfiedPool = participantIds.filter((p) => playCount[p] >= target && !leftover.includes(p));
+
+      // Sama seperti backend: tidak dipatok siapa pasangan/lawan siapa -- dicoba beberapa
+      // kombinasi pengisi, dipilih yang paling sedikit mengulang partner/lawan.
+      let bestPool = null, bestResult = null, bestScore = Infinity;
+      const attempts = fillersNeeded > 0 ? 30 : 1;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const fillers = fillersNeeded > 0 ? simShuffle(satisfiedPool).slice(0, fillersNeeded) : [];
+        if (fillers.length < fillersNeeded) break;
+        const trialPool = [...leftover, ...fillers];
+        const result = simBuildRoundMatches(trialPool, partnerCount, opponentCount, key);
+        if (result.score < bestScore) { bestScore = result.score; bestPool = trialPool; bestResult = result; }
+        if (bestScore === 0) break;
+      }
+      const pool = bestPool || leftover;
+      const { teams } = bestResult || simBuildRoundMatches(pool, partnerCount, opponentCount, key);
+      teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
+      const goldenSet = new Set(pool.filter((p) => !leftover.includes(p)));
+
+      let teamsPool = [...teams];
+      if (teamsPool.length % 2 !== 0) {
+        const satisfied2 = simShuffle(participantIds.filter((p) => playCount[p] >= target && !pool.includes(p)));
+        const fillerTeam = [satisfied2[0], satisfied2[1]];
+        teamsPool.push(fillerTeam);
+        goldenSet.add(fillerTeam[0]); goldenSet.add(fillerTeam[1]);
+      }
+      const { matches: teamMatches } = simPairTeamsIntoMatches(teamsPool, opponentCount, key);
+      commitMatches(teamMatches, roundNum, goldenSet);
+      leftover = participantIds.filter((p) => playCount[p] < target);
+    }
+    return { schedule };
+  }
+
   tournamentCreateWrap.querySelector("#tourney-simulate-btn").addEventListener("click", () => {
     const resultEl = tournamentCreateWrap.querySelector("#tourney-simulate-result");
     const n = participantEntries.length;
@@ -1268,24 +1349,47 @@ async function renderAdmin(container) {
     const roundsMode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
     const targetPlays = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value);
     const fairMix = tournamentCreateWrap.querySelector("#tourney-fair-mix").checked;
-
-    let courtsPerRound;
-    if (roundsMode === "manual" && fairMix) {
-      courtsPerRound = computeFairMixedRounds(n, numCourts, targetPlays);
-      if (!courtsPerRound) {
-        resultEl.style.display = "block";
-        resultEl.innerHTML = `<span class="muted">⚠️ Target ${targetPlays}x tidak bisa dibagi rata persis untuk ${n} peserta -- ganti targetnya dulu (lihat saran di atas).</span>`;
-        return;
-      }
-    } else {
-      const numRounds = roundsMode === "manual" && Number.isInteger(targetPlays) && targetPlays > 0
-        ? computeRoundsFromTarget(n, numCourts, targetPlays)
-        : simComputeIdealRounds(n, numCourts);
-      courtsPerRound = Array(numRounds).fill(numCourts);
-    }
-
     const ids = participantEntries.map((_, i) => i + 1);
     const names = Object.fromEntries(participantEntries.map((e, i) => [i + 1, e.p1Name]));
+
+    if (roundsMode === "manual" && fairMix) {
+      const { schedule } = simGenerateScheduleFair(ids, numCourts, targetPlays);
+      const playCount = Object.fromEntries(ids.map((p) => [p, 0]));
+      const tournamentPlayCount = Object.fromEntries(ids.map((p) => [p, 0]));
+      let totalMatches = 0;
+      const roundLines = [];
+      schedule.forEach(({ round, matches }) => {
+        totalMatches += matches.length;
+        const isGoldenRound = matches.some((m) => m.golden1 || m.golden1b || m.golden2 || m.golden2b);
+        matches.forEach((m) => {
+          const gTag = (p, g) => g ? `${names[p]}<span class="muted" style="font-size:10px">(pengisi)</span>` : names[p];
+          [[m.t1[0], m.golden1], [m.t1[1], m.golden1b], [m.t2[0], m.golden2], [m.t2[1], m.golden2b]].forEach(([p, golden]) => {
+            playCount[p]++;
+            if (!golden) tournamentPlayCount[p]++;
+          });
+          roundLines.push(`<div style="margin:2px 0">R${round}${isGoldenRound ? " 🏅" : ""}: ${gTag(m.t1[0], m.golden1)}/${gTag(m.t1[1], m.golden1b)} vs ${gTag(m.t2[0], m.golden2)}/${gTag(m.t2[1], m.golden2b)}</div>`);
+        });
+      });
+      const tCounts = Object.values(tournamentPlayCount);
+      const minT = Math.min(...tCounts), maxT = Math.max(...tCounts);
+      const perPlayerRows = ids
+        .map((p) => `<span style="display:inline-block;margin:2px 8px 2px 0">${names[p]}: <strong>${tournamentPlayCount[p]}x</strong>${playCount[p] > tournamentPlayCount[p] ? ` <span class="muted" style="font-size:10px">(+${playCount[p] - tournamentPlayCount[p]} golden)</span>` : ""}</span>`)
+        .join("");
+
+      resultEl.style.display = "block";
+      resultEl.innerHTML = `
+        <div style="margin-bottom:6px"><strong>${schedule.length} ronde</strong>, total <strong>${totalMatches} match</strong> — poin turnamen: ${minT === maxT ? `tepat ${minT}x` : `${minT}-${maxT}x`} semua peserta.</div>
+        <div style="margin-bottom:6px">Detail per peserta:<br/>${perPlayerRows}</div>
+        <div style="margin-bottom:6px;font-size:12px;max-height:160px;overflow-y:auto;border-top:1px solid #e5e5e0;padding-top:4px">${roundLines.join("")}</div>
+        <p class="muted" style="font-size:11px;margin:0">🏅 = Golden Round -- pasangan/lawan yang ditandai "(pengisi)" sudah capai target, poinnya di match itu tidak dihitung ke turnamen (tapi rating umum tetap update). Kombinasi pasangan sebenarnya nanti bisa beda, tapi jumlah ronde &amp; hasil akhirnya akan sama.</p>
+      `;
+      return;
+    }
+
+    const numRounds = roundsMode === "manual" && Number.isInteger(targetPlays) && targetPlays > 0
+      ? computeRoundsFromTarget(n, numCourts, targetPlays)
+      : simComputeIdealRounds(n, numCourts);
+    const courtsPerRound = Array(numRounds).fill(numCourts);
     const { schedule } = simGenerateSchedule(ids, courtsPerRound);
 
     const playCount = Object.fromEntries(ids.map((p) => [p, 0]));
@@ -1406,9 +1510,7 @@ async function renderAdmin(container) {
     const roundsMode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
     const targetPlays = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value);
     const fairMix = tournamentCreateWrap.querySelector("#tourney-fair-mix").checked;
-    const roundCourtsToSend = (isCappuccino() && roundsMode === "manual" && fairMix)
-      ? computeFairMixedRounds(participantEntries.length, numCourts, targetPlays)
-      : null;
+    const fairTargetToSend = (isCappuccino() && roundsMode === "manual" && fairMix) ? targetPlays : null;
     const numRounds = roundsMode === "manual" && Number.isInteger(targetPlays) && targetPlays > 0
       ? computeRoundsFromTarget(participantEntries.length, numCourts, targetPlays)
       : null;
@@ -1430,20 +1532,18 @@ async function renderAdmin(container) {
       errorEl.style.display = "block";
       return;
     }
-    if (isCappuccino() && roundsMode === "manual" && fairMix && !roundCourtsToSend) {
-      errorEl.textContent = `Target ${targetPlays}x tidak bisa dibagi rata persis untuk ${participantEntries.length} peserta -- ganti targetnya (lihat saran di atas perkiraan)`;
-      errorEl.style.display = "block";
-      return;
-    }
     if (isCappuccino() && roundsMode === "manual" && !fairMix && numRounds > 30) {
       errorEl.textContent = `Target ${targetPlays}x main butuh ${numRounds} kali ganti pasangan (kebanyakan, maks 30) -- turunkan targetnya atau tambah lapangan`;
       errorEl.style.display = "block";
       return;
     }
-    if (isCappuccino() && roundsMode === "manual" && fairMix && roundCourtsToSend.length > 30) {
-      errorEl.textContent = `Target ${targetPlays}x butuh ${roundCourtsToSend.length} kali ganti pasangan (kebanyakan, maks 30) -- turunkan targetnya`;
-      errorEl.style.display = "block";
-      return;
+    if (isCappuccino() && roundsMode === "manual" && fairMix) {
+      const info = estimateFairGolden(participantEntries.length, numCourts, targetPlays);
+      if (info && info.totalRounds > 30) {
+        errorEl.textContent = `Target ${targetPlays}x butuh ${info.totalRounds} kali ganti pasangan (kebanyakan, maks 30) -- turunkan targetnya`;
+        errorEl.style.display = "block";
+        return;
+      }
     }
     if (!isCappuccino() && participantEntries.length < 2) {
       errorEl.textContent = "Tambahkan minimal 2 peserta";
@@ -1473,7 +1573,7 @@ async function renderAdmin(container) {
           numGroups: format === "group_knockout" ? numGroups : undefined,
           numCourts: isCappuccino() ? numCourts : undefined,
           numRounds: isCappuccino() ? numRounds : undefined,
-          roundCourts: roundCourtsToSend || undefined,
+          fairTarget: fairTargetToSend || undefined,
         }),
       });
       alert(data.message);
@@ -1783,9 +1883,12 @@ function buildMatchListHtml(matches, isAdmin, allowParticipantSubmit = false, cu
     );
     const canSubmit = (isAdmin || isMatchParticipant) && m.status === "pending" && m.participant1 && m.participant2;
     const canCorrect = isAdmin && m.status === "completed" && m.participant1 && m.participant2;
+    const p1Tag = m.goldenTeam1 ? ` <span class="muted" style="font-size:10px">(pengisi)</span>` : "";
+    const p2Tag = m.goldenTeam2 ? ` <span class="muted" style="font-size:10px">(pengisi)</span>` : "";
+    const goldenBadge = m.isGolden ? `<span style="font-size:10px;background:#fff8e1;color:#8a6d00;padding:2px 6px;border-radius:6px;font-weight:600;margin-left:4px">🏅 Golden Round</span>` : "";
     html += `<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
       <div style="display:flex;justify-content:space-between">
-        <span>${p1} vs ${p2}</span><span>${resultText}</span>
+        <span>${p1}${p1Tag} vs ${p2}${p2Tag}${goldenBadge}</span><span>${resultText}</span>
       </div>
       ${canSubmit ? `<button class="btn secondary" style="margin-top:0" data-submit-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">Input Hasil</button>` : ""}
       ${canCorrect ? `<button class="btn secondary" style="margin-top:0;font-size:11px;padding:4px;color:#c62828" data-correct-tm="${m.id}" data-p1="${m.participant1.id}" data-p2="${m.participant2.id}" data-p1name="${m.participant1.label}" data-p2name="${m.participant2.label}">✏️ Koreksi Hasil</button>` : ""}
