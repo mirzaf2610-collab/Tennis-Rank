@@ -271,16 +271,19 @@ model Tournament {
 }
 
 // 1 "peserta" turnamen = 1 pemain (Single) ATAU 1 tim berisi 2 pemain (Ganda, player2Id terisi)
+// Untuk Sistem Cappuccino External, player1Id bisa NULL dan guestName terisi -- peserta
+// tamu yang namanya diketik manual, tidak punya akun/rating di aplikasi.
 model TournamentParticipant {
-  id           Int  @id @default(autoincrement())
-  tournamentId Int  @map("tournament_id")
-  player1Id    Int  @map("player1_id")
-  player2Id    Int? @map("player2_id") // cuma terisi untuk turnamen Ganda
+  id           Int     @id @default(autoincrement())
+  tournamentId Int     @map("tournament_id")
+  player1Id    Int?    @map("player1_id")
+  player2Id    Int?    @map("player2_id") // cuma terisi untuk turnamen Ganda
+  guestName    String? @map("guest_name") // cuma terisi untuk peserta tamu (Sistem Cappuccino External)
   seed         Int  // urutan posisi/seeding yang diatur admin
   groupNumber  Int? @map("group_number") // cuma terisi untuk format group_knockout
 
   tournament Tournament @relation(fields: [tournamentId], references: [id])
-  player1    Player     @relation("TournamentParticipantP1", fields: [player1Id], references: [id])
+  player1    Player?    @relation("TournamentParticipantP1", fields: [player1Id], references: [id])
   player2    Player?    @relation("TournamentParticipantP2", fields: [player2Id], references: [id])
 
   matchesAsParticipant1 TournamentMatch[] @relation("TMParticipant1")
@@ -306,6 +309,15 @@ model TournamentMatch {
   winnerParticipantId Int?     @map("winner_participant_id")
   singleMatchId        Int?    @unique @map("single_match_id")
   doublesMatchId       Int?    @unique @map("doubles_match_id")
+  externalLoserGames   Int?    @map("external_loser_games") // skor langsung utk Sistem Cappuccino External (tidak ada Match/DoublesMatch, tidak pengaruhi rating)
+  // "Golden Round" (Sistem Cappuccino, mode Rata Sempurna): kalau true, slot pemain itu di match
+  // ini cuma jadi PENGISI (sudah capai target main-nya) -- hasilnya TETAP masuk rating umum
+  // (Match/DoublesMatch tetap dibuat & rating tetap update normal), TAPI poin/menang/game-nya
+  // TIDAK dihitung ke ranking turnamen ini (biar pemain yang belum capai target tidak dirugikan).
+  goldenP1  Boolean @default(false) @map("golden_p1")
+  goldenP1b Boolean @default(false) @map("golden_p1b")
+  goldenP2  Boolean @default(false) @map("golden_p2")
+  goldenP2b Boolean @default(false) @map("golden_p2b")
   status              String   @default("pending") // pending | bye | completed
   createdAt           DateTime @default(now()) @map("created_at")
 
