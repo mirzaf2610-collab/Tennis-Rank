@@ -124,7 +124,7 @@ function buildRoundMatches(playersInRound, partnerCount, opponentCount, key) {
     }
     const { matches, cost } = pairTeamsIntoMatches(teams, opponentCount, key);
     const score = partnerRepeats * 1000 + cost; // hindari partner berulang jauh lebih diutamakan
-    if (score < bestScore) { bestScore = score; best = { teams, matches }; }
+    if (score < bestScore) { bestScore = score; best = { teams, matches, score }; }
     if (bestScore === 0) break;
   }
   return best;
@@ -172,21 +172,98 @@ function generateCappuccinoSchedule(participantIds, courtsPerRound) {
   return schedule;
 }
 
-// Hitung susunan jumlah-lapangan-per-ronde yang bikin SEMUA peserta main TEPAT `target` kali,
-// dengan total ronde paling sedikit (boleh campur 1 & 2 lapangan per ronde) -- dipakai mode
-// "Rata Sempurna". Cuma bisa persis rata kalau (n * target) habis dibagi 4 (karena tiap match
-// butuh persis 4 slot main); kalau tidak, return null (mode ini tidak berlaku, fallback ke mode biasa).
-function computeFairMixedRounds(n, maxCourts, target) {
+// Bangun jadwal Sistem Cappuccino mode "Rata Sempurna": SEMUA peserta dijamin PERSIS `target`
+// kali main (dihitung ke poin turnamen), tidak ada yang lebih atau kurang. Caranya: jalankan
+// ronde penuh (pakai maxCourts) sebanyak mungkin dulu, lalu kekurangan sisanya (kalau ada)
+// ditutup lewat "Golden Round" -- peserta yang masih kurang dipasangkan normal (2v2); kalau
+// jumlahnya tidak pas kelipatan 4, ditambah pengisi (peserta yang SUDAH capai target, dipilih
+// acak) supaya match tetap format ganda normal. Match/rating tetap normal buat semua (termasuk
+// pengisi), tapi poin pengisi itu ditandai `golden*` = true supaya tidak dihitung ke ranking
+// turnamen ini (lihat komentar di schema.prisma).
+function generateCappuccinoScheduleFair(participantIds, maxCourts, target) {
+  const n = participantIds.length;
+  let active = Math.min(n, maxCourts * 4);
+  active = active - (active % 4);
   const totalSlotsNeeded = n * target;
-  if (totalSlotsNeeded % 4 !== 0) return null;
-  let remainingCourts = totalSlotsNeeded / 4; // total "unit lapangan" (1 unit = 1 match = 4 slot)
-  const roundCourts = [];
-  while (remainingCourts > 0) {
-    const courts = Math.min(maxCourts, remainingCourts);
-    roundCourts.push(courts);
-    remainingCourts -= courts;
+  const fullRounds = Math.floor(totalSlotsNeeded / active);
+
+  const sitOutCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
+  const partnerCount = {};
+  const opponentCount = {};
+  const key = (a, b) => [a, b].sort((x, y) => x - y).join("-");
+  participantIds.forEach((a) => participantIds.forEach((b) => { if (a < b) { partnerCount[key(a, b)] = 0; opponentCount[key(a, b)] = 0; } }));
+  const playCount = Object.fromEntries(participantIds.map((p) => [p, 0]));
+  const schedule = [];
+
+  const commitMatches = (teamMatches, roundNum, goldenSet) => {
+    const matches = teamMatches.map(([t1, t2]) => {
+      opponentCount[key(t1[0], t2[0])]++; opponentCount[key(t1[0], t2[1])]++;
+      opponentCount[key(t1[1], t2[0])]++; opponentCount[key(t1[1], t2[1])]++;
+      [t1[0], t1[1], t2[0], t2[1]].forEach((p) => playCount[p]++);
+      return {
+        p1: t1[0], p1b: t1[1], p2: t2[0], p2b: t2[1],
+        goldenP1: goldenSet ? goldenSet.has(t1[0]) : false,
+        goldenP1b: goldenSet ? goldenSet.has(t1[1]) : false,
+        goldenP2: goldenSet ? goldenSet.has(t2[0]) : false,
+        goldenP2b: goldenSet ? goldenSet.has(t2[1]) : false,
+      };
+    });
+    schedule.push({ round: roundNum, matches });
+  };
+
+  for (let r = 1; r <= fullRounds; r++) {
+    const sitOutNeeded = n - active;
+    const sorted = shuffleArray(participantIds).sort((a, b) => sitOutCount[a] - sitOutCount[b]);
+    const sittingOut = sorted.slice(0, sitOutNeeded);
+    const playing = participantIds.filter((p) => !sittingOut.includes(p));
+    sittingOut.forEach((p) => sitOutCount[p]++);
+    const { teams, matches: teamMatches } = buildRoundMatches(playing, partnerCount, opponentCount, key);
+    teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
+    commitMatches(teamMatches, r, null);
   }
-  return roundCourts;
+
+  let leftover = participantIds.filter((p) => playCount[p] < target);
+  let roundNum = fullRounds;
+  while (leftover.length > 0) {
+    roundNum++;
+    // Jumlah pengisi yang dibutuhkan supaya genap ke kelipatan 4 (1 match penuh)
+    const neededTotal = Math.ceil(leftover.length / 4) * 4;
+    const fillersNeeded = Math.max(0, neededTotal - leftover.length);
+    const satisfiedPool = participantIds.filter((p) => playCount[p] >= target && !leftover.includes(p));
+
+    // PENTING: siapa yang jadi partner/lawan siapa (termasuk G&K sesama peserta yang masih
+    // kurang) TIDAK dipatok aturan tetap -- dicoba beberapa kombinasi pengisi, lalu dipilih
+    // susunan yang paling sedikit mengulang partner/lawan (skor sama seperti ronde biasa).
+    // Jadi bisa saja hasilnya G&K jadi partner, bisa juga jadi lawan, tergantung riwayat mereka.
+    let bestPool = null, bestResult = null, bestScore = Infinity;
+    const attempts = fillersNeeded > 0 ? 30 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const fillers = fillersNeeded > 0 ? shuffleArray(satisfiedPool).slice(0, fillersNeeded) : [];
+      if (fillers.length < fillersNeeded) break; // kepepet kehabisan pengisi (kasus ekstrem, jarang terjadi)
+      const trialPool = [...leftover, ...fillers];
+      const result = buildRoundMatches(trialPool, partnerCount, opponentCount, key);
+      if (result.score < bestScore) { bestScore = result.score; bestPool = trialPool; bestResult = result; }
+      if (bestScore === 0) break;
+    }
+    const pool = bestPool || leftover;
+    const { teams } = bestResult || buildRoundMatches(pool, partnerCount, opponentCount, key);
+    teams.forEach(([a, b]) => { partnerCount[key(a, b)]++; });
+    const goldenSet = new Set(pool.filter((p) => !leftover.includes(p)));
+
+    // Genapkan jumlah TIM supaya bisa jadi match (2 tim/match): kalau masih ganjil (leftover
+    // ganda kecil), tambah 1 tim pengisi lagi
+    let teamsPool = [...teams];
+    if (teamsPool.length % 2 !== 0) {
+      const satisfied2 = shuffleArray(participantIds.filter((p) => playCount[p] >= target && !pool.includes(p)));
+      const fillerTeam = [satisfied2[0], satisfied2[1]];
+      teamsPool.push(fillerTeam);
+      goldenSet.add(fillerTeam[0]); goldenSet.add(fillerTeam[1]);
+    }
+    const { matches: teamMatches } = pairTeamsIntoMatches(teamsPool, opponentCount, key);
+    commitMatches(teamMatches, roundNum, goldenSet);
+    leftover = participantIds.filter((p) => playCount[p] < target);
+  }
+  return schedule;
 }
 
 // Buat match round-robin (semua lawan semua) untuk sekelompok participantId.
@@ -257,7 +334,7 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
 // Untuk Single, participantIds berisi array id biasa: [id1, id2, id3, ...]
 // Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
-  const { name, format, type, participantIds, numGroups, numCourts, numRounds, roundCourts } = req.body;
+  const { name, format, type, participantIds, numGroups, numCourts, numRounds, fairTarget } = req.body;
   const tType = (format === "cappuccino" || format === "cappuccino_external") ? "doubles" : (type === "doubles" ? "doubles" : "singles");
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
@@ -279,13 +356,9 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
     if (numRounds != null && (!Number.isInteger(numRounds) || numRounds < 1 || numRounds > 30)) {
       return res.status(400).json({ error: { code: "INVALID_ROUNDS", message: "Jumlah ronde harus bilangan bulat 1-30" } });
     }
-    // Mode "Rata Sempurna": roundCourts = susunan jumlah lapangan per ronde (boleh campur).
-    if (roundCourts != null) {
-      const validArray = Array.isArray(roundCourts) && roundCourts.length > 0 && roundCourts.length <= 30
-        && roundCourts.every((c) => Number.isInteger(c) && c >= 1 && c <= numCourts);
-      if (!validArray) {
-        return res.status(400).json({ error: { code: "INVALID_ROUND_COURTS", message: "Susunan lapangan per ronde tidak valid" } });
-      }
+    // Mode "Rata Sempurna": fairTarget = target main tiap peserta, dijamin PERSIS lewat Golden Round.
+    if (fairTarget != null && (!Number.isInteger(fairTarget) || fairTarget < 1 || fairTarget > 30)) {
+      return res.status(400).json({ error: { code: "INVALID_FAIR_TARGET", message: "Target main harus bilangan bulat 1-30" } });
     }
     // Peserta tamu (nama manual, bukan pemain terdaftar) cuma boleh di Sistem Cappuccino
     // External -- Sistem Cappuccino biasa perlu semua peserta terdaftar karena hasilnya
@@ -355,20 +428,20 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
         await generateBracketMatches(tx, t.id, createdParticipants.map((p) => p.id), "main");
       } else if (format === "cappuccino" || format === "cappuccino_external") {
         const participantIdsOnly = createdParticipants.map((p) => p.id);
-        let courtsPerRound;
-        if (Array.isArray(roundCourts) && roundCourts.length > 0) {
-          // Mode "Rata Sempurna": susunan lapangan per ronde sudah dihitung & dikirim frontend
-          // (boleh campur 1-2 lapangan per ronde supaya total main per peserta pas rata).
-          courtsPerRound = roundCourts;
+        let schedule;
+        if (Number.isInteger(fairTarget) && fairTarget > 0) {
+          // Mode "Rata Sempurna": semua peserta dijamin PERSIS fairTarget kali main lewat
+          // mekanisme Golden Round (lihat komentar di generateCappuccinoScheduleFair).
+          schedule = generateCappuccinoScheduleFair(participantIdsOnly, numCourts, fairTarget);
         } else {
           // Mode biasa: jumlah lapangan sama tiap ronde. Kalau admin sudah pilih jumlah ronde
           // sendiri, pakai itu. Kalau tidak diisi, fallback ke rumus "ideal" (jamin semua rata).
           const roundsToUse = Number.isInteger(numRounds) && numRounds > 0
             ? numRounds
             : computeIdealRounds(participantIdsOnly.length, numCourts);
-          courtsPerRound = Array(roundsToUse).fill(numCourts);
+          const courtsPerRound = Array(roundsToUse).fill(numCourts);
+          schedule = generateCappuccinoSchedule(participantIdsOnly, courtsPerRound);
         }
-        const schedule = generateCappuccinoSchedule(participantIdsOnly, courtsPerRound);
         for (const { round, matches } of schedule) {
           for (let mi = 0; mi < matches.length; mi++) {
             const m = matches[mi];
@@ -377,6 +450,8 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
                 tournamentId: t.id, stage: "main", round, matchIndex: mi,
                 participant1Id: m.p1, participant1bId: m.p1b,
                 participant2Id: m.p2, participant2bId: m.p2b,
+                goldenP1: !!m.goldenP1, goldenP1b: !!m.goldenP1b,
+                goldenP2: !!m.goldenP2, goldenP2b: !!m.goldenP2b,
                 status: "pending",
               },
             });
@@ -614,6 +689,11 @@ router.get("/tournaments/:id", async (req, res) => {
       score,
       team1PlayerIds,
       team2PlayerIds,
+      // Golden Round (Sistem Cappuccino, mode Rata Sempurna): match ini punya peserta "pengisi"
+      // (sudah capai target main-nya) yang poinnya tidak dihitung ke ranking turnamen.
+      isGolden: !!(m.goldenP1 || m.goldenP1b || m.goldenP2 || m.goldenP2b),
+      goldenTeam1: !!(m.goldenP1 || m.goldenP1b),
+      goldenTeam2: !!(m.goldenP2 || m.goldenP2b),
       };
     };
 
@@ -671,16 +751,23 @@ router.get("/tournaments/:id", async (req, res) => {
         if (loserGames == null) return;
         const margin = 6 - loserGames;
         const winIsTeam1 = m.winnerParticipantId === m.participant1Id;
-        const winnerIds = winIsTeam1 ? [m.participant1Id, m.participant1bId] : [m.participant2Id, m.participant2bId];
-        const loserIds = winIsTeam1 ? [m.participant2Id, m.participant2bId] : [m.participant1Id, m.participant1bId];
-        winnerIds.forEach((pid) => {
-          if (pid == null) return;
+        // Ikutkan status "golden" tiap slot -- kalau true, match ini cuma jadi PENGISI buat orang
+        // itu (sudah capai target di mode Rata Sempurna), jadi tidak dihitung ke poin/menang/game
+        // turnamen (walau ratingnya tetap update normal lewat DoublesMatch, tidak terpengaruh ini).
+        const winnerSlots = winIsTeam1
+          ? [[m.participant1Id, m.goldenP1], [m.participant1bId, m.goldenP1b]]
+          : [[m.participant2Id, m.goldenP2], [m.participant2bId, m.goldenP2b]];
+        const loserSlots = winIsTeam1
+          ? [[m.participant2Id, m.goldenP2], [m.participant2bId, m.goldenP2b]]
+          : [[m.participant1Id, m.goldenP1], [m.participant1bId, m.goldenP1b]];
+        winnerSlots.forEach(([pid, golden]) => {
+          if (pid == null || golden) return;
           points[pid] = (points[pid] || 0) + margin;
           winsCount[pid] = (winsCount[pid] || 0) + 1;
           gamesWon[pid] = (gamesWon[pid] || 0) + 6;
         });
-        loserIds.forEach((pid) => {
-          if (pid == null) return;
+        loserSlots.forEach(([pid, golden]) => {
+          if (pid == null || golden) return;
           gamesWon[pid] = (gamesWon[pid] || 0) + loserGames;
         });
       });
