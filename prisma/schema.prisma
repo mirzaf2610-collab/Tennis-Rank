@@ -119,7 +119,8 @@ model DoublesMatch {
   team2Player2Id Int @map("team2_player2_id")
 
   winningTeam   Int      @map("winning_team") // 1 atau 2
-  loserGames    Int      @map("loser_games")  // 0-5, format tetap first-to-6
+  loserGames    Int      @map("loser_games")  // 0 s.d (targetGames-1)
+  targetGames   Int      @default(6) @map("target_games") // format main sampai berapa game: 4, 6 (standar), dst
 
   team1RatingBefore Decimal? @map("team1_rating_before") @db.Decimal(7, 2)
   team2RatingBefore Decimal? @map("team2_rating_before") @db.Decimal(7, 2)
@@ -263,6 +264,7 @@ model Tournament {
   status      String    @default("ongoing") // ongoing | completed
   createdAt   DateTime  @default(now()) @map("created_at")
   completedAt DateTime? @map("completed_at")
+  cappuccinoTargetGames Int? @map("cappuccino_target_games") // khusus Sistem Cappuccino/External: format main sampai berapa game (4, 6 standar, dst) buat semua match di turnamen ini
 
   participants TournamentParticipant[]
   matches      TournamentMatch[]
@@ -310,6 +312,7 @@ model TournamentMatch {
   singleMatchId        Int?    @unique @map("single_match_id")
   doublesMatchId       Int?    @unique @map("doubles_match_id")
   externalLoserGames   Int?    @map("external_loser_games") // skor langsung utk Sistem Cappuccino External (tidak ada Match/DoublesMatch, tidak pengaruhi rating)
+  externalTargetGames  Int?    @map("external_target_games") // format main sampai berapa game, pasangan externalLoserGames
   // "Golden Round" (Sistem Cappuccino, mode Rata Sempurna): kalau true, slot pemain itu di match
   // ini cuma jadi PENGISI (sudah capai target main-nya) -- hasilnya TETAP masuk rating umum
   // (Match/DoublesMatch tetap dibuat & rating tetap update normal), TAPI poin/menang/game-nya
