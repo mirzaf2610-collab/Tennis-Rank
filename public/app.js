@@ -730,20 +730,34 @@ async function renderSubmitDoubles(container) {
       <select id="opp1"></select>
       <label style="font-size:16px;font-weight:600;color:#1a1a1a">Lawan 2</label>
       <select id="opp2"></select>
+      <label>Format (main sampai berapa game)</label>
+      <select id="target-games">
+        <option value="4">First to 4</option>
+        <option value="6" selected>First to 6 (standar)</option>
+      </select>
       <label>Tim mana yang menang?</label>
       <select id="who-won">
         <option value="team1">Tim saya menang</option>
         <option value="team2">Tim lawan menang</option>
       </select>
-      <label>Game yang didapat tim yang kalah (0-5)</label>
-      <select id="loser-games">
-        ${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n}</option>`).join("")}
-      </select>
+      <label>Game yang didapat tim yang kalah</label>
+      <select id="loser-games"></select>
       <div id="f-error" class="error" style="display:none"></div>
       <button id="submit-btn" class="btn">Submit hasil</button>
     </div>
   `);
   container.appendChild(wrap);
+
+  function refreshLoserGamesOptions() {
+    const targetGames = Number(wrap.querySelector("#target-games").value);
+    const loserGamesSelect = wrap.querySelector("#loser-games");
+    const options = [];
+    for (let n = 0; n < targetGames; n++) options.push(n);
+    loserGamesSelect.innerHTML = options.map((n) => `<option value="${n}">${n}</option>`).join("");
+  }
+  wrap.querySelector("#target-games").addEventListener("change", refreshLoserGamesOptions);
+  refreshLoserGamesOptions();
+
 
   try {
     const { players } = await api("/players?includeDummy=true");
@@ -763,6 +777,7 @@ async function renderSubmitDoubles(container) {
     const opp2Value = wrap.querySelector("#opp2").value;
     const iWon = wrap.querySelector("#who-won").value === "team1";
     const loserGames = Number(wrap.querySelector("#loser-games").value);
+    const targetGames = Number(wrap.querySelector("#target-games").value);
     const errorEl = wrap.querySelector("#f-error");
     errorEl.style.display = "none";
 
@@ -790,6 +805,7 @@ async function renderSubmitDoubles(container) {
           team1Player2Id, team2Player1Id, team2Player2Id,
           winningTeam: iWon ? 1 : 2,
           loserGames,
+          targetGames,
         }),
       });
       alert(data.message || "Hasil match ganda dikirim, menunggu konfirmasi salah satu pemain tim lawan.");
@@ -960,6 +976,11 @@ async function renderAdmin(container) {
         <select id="tourney-num-courts">
           <option value="1">1 Lapangan</option>
           <option value="2" selected>2 Lapangan</option>
+        </select>
+        <label style="margin-top:0.5rem">Format (main sampai berapa game)</label>
+        <select id="tourney-target-games">
+          <option value="4">First to 4</option>
+          <option value="6" selected>First to 6 (standar)</option>
         </select>
         <label style="margin-top:0.5rem">Berapa kali main (ganti pasangan)</label>
         <select id="tourney-rounds-mode">
@@ -1507,6 +1528,7 @@ async function renderAdmin(container) {
     const format = tournamentCreateWrap.querySelector("#tourney-format").value;
     const numGroups = Number(tournamentCreateWrap.querySelector("#tourney-num-groups").value);
     const numCourts = Number(tournamentCreateWrap.querySelector("#tourney-num-courts").value);
+    const cappuccinoTargetGames = Number(tournamentCreateWrap.querySelector("#tourney-target-games").value) || 6;
     const roundsMode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
     const targetPlays = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value);
     const fairMix = tournamentCreateWrap.querySelector("#tourney-fair-mix").checked;
@@ -1572,6 +1594,7 @@ async function renderAdmin(container) {
           name, format, type, participantIds,
           numGroups: format === "group_knockout" ? numGroups : undefined,
           numCourts: isCappuccino() ? numCourts : undefined,
+          cappuccinoTargetGames: isCappuccino() ? cappuccinoTargetGames : undefined,
           numRounds: isCappuccino() ? numRounds : undefined,
           fairTarget: fairTargetToSend || undefined,
         }),
@@ -1897,7 +1920,7 @@ function buildMatchListHtml(matches, isAdmin, allowParticipantSubmit = false, cu
   return html;
 }
 
-function wireSubmitButtons(detail, tId, render) {
+function wireSubmitButtons(detail, tId, render, defaultTargetGames = 6) {
   detail.querySelectorAll("[data-submit-tm]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const tmId = btn.dataset.submitTm;
@@ -1907,9 +1930,9 @@ function wireSubmitButtons(detail, tId, render) {
       const p2Name = btn.dataset.p2name;
       const winnerChoice = prompt(`Siapa yang menang?\n1 = ${p1Name}\n2 = ${p2Name}`);
       if (winnerChoice !== "1" && winnerChoice !== "2") return;
-      const loserGamesStr = prompt("Game yang didapat pihak kalah (0-5)?");
+      const loserGamesStr = prompt(`Game yang didapat pihak kalah (0-${defaultTargetGames - 1})?`);
       const loserGames = Number(loserGamesStr);
-      if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > 5) {
+      if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > defaultTargetGames - 1) {
         alert("Skor tidak valid");
         return;
       }
@@ -1917,7 +1940,7 @@ function wireSubmitButtons(detail, tId, render) {
       try {
         const data = await api(`/admin/tournaments/${tId}/matches/${tmId}/submit`, {
           method: "POST",
-          body: JSON.stringify({ winnerId, loserGames, targetGames: 6 }),
+          body: JSON.stringify({ winnerId, loserGames, targetGames: defaultTargetGames }),
         });
         alert(data.message);
         render();
@@ -1939,9 +1962,9 @@ function wireSubmitButtons(detail, tId, render) {
       if (!confirm(`Koreksi hasil match ${p1Name} vs ${p2Name}?\n\nRating yang sudah terlanjur berubah dari hasil lama akan dikembalikan dulu, baru dihitung ulang pakai hasil yang baru.`)) return;
       const winnerChoice = prompt(`Siapa yang SEHARUSNYA menang?\n1 = ${p1Name}\n2 = ${p2Name}`);
       if (winnerChoice !== "1" && winnerChoice !== "2") return;
-      const loserGamesStr = prompt("Game yang didapat pihak kalah yang benar (0-5)?");
+      const loserGamesStr = prompt(`Game yang didapat pihak kalah yang benar (0-${defaultTargetGames - 1})?`);
       const loserGames = Number(loserGamesStr);
-      if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > 5) {
+      if (Number.isNaN(loserGames) || loserGames < 0 || loserGames > defaultTargetGames - 1) {
         alert("Skor tidak valid");
         return;
       }
@@ -1949,7 +1972,7 @@ function wireSubmitButtons(detail, tId, render) {
       try {
         const data = await api(`/admin/tournaments/${tId}/matches/${tmId}/correct`, {
           method: "POST",
-          body: JSON.stringify({ winnerId, loserGames, targetGames: 6 }),
+          body: JSON.stringify({ winnerId, loserGames, targetGames: defaultTargetGames }),
         });
         alert(data.message);
         render();
@@ -1983,7 +2006,7 @@ async function renderTournamentDetail(container) {
 
     const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)", cappuccino: "Sistem Cappuccino", cappuccino_external: "Sistem Cappuccino External (tidak pengaruhi rating)" }[tournament.format];
     let html = `<h2>🏆 ${tournament.name}</h2>`;
-    html += `<p class="muted" style="font-size:13px">${formatLabel} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
+    html += `<p class="muted" style="font-size:13px">${formatLabel}${tournament.cappuccinoTargetGames ? ` (First to ${tournament.cappuccinoTargetGames})` : ""} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
     if (tournament.format === "cappuccino_external") {
       html += `<p class="muted" style="font-size:12px;background:#f3e5f5;padding:6px 10px;border-radius:8px">☕ Turnamen ini murni buat seru-seruan -- boleh ada peserta tamu (tidak terdaftar di aplikasi), dan hasilnya TIDAK pengaruh ke rating siapapun.</p>`;
     }
@@ -2022,7 +2045,10 @@ async function renderTournamentDetail(container) {
     }
 
     detail.innerHTML = html;
-    wireSubmitButtons(detail, tId, render);
+    const wireTargetGames = (tournament.format === "cappuccino" || tournament.format === "cappuccino_external")
+      ? (tournament.cappuccinoTargetGames || 6)
+      : 6;
+    wireSubmitButtons(detail, tId, render, wireTargetGames);
 
     if (isAdmin && tournament.format === "group_knockout" && canStartKnockout) {
       const startKoBtn = el(`<button class="btn" style="margin-top:1rem">Mulai Babak Knockout (Top 2 tiap grup)</button>`);
