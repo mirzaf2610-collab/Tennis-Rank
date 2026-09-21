@@ -55,7 +55,7 @@ router.get("/recent-matches", async (req, res) => {
       confirmedAt: m.confirmedAt,
       winnerText,
       loserText,
-      score: `6-${m.loserGames}`,
+      score: `${m.targetGames}-${m.loserGames}`,
     };
   });
 
@@ -105,7 +105,7 @@ router.get("/pending-matches", async (req, res) => {
       createdAt: m.createdAt,
       claimedWinnerText,
       claimedLoserText,
-      score: `6-${m.loserGames}`,
+      score: `${m.targetGames}-${m.loserGames}`,
     };
   });
 

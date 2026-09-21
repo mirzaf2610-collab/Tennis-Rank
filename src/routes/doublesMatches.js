@@ -1,6 +1,6 @@
 const express = require("express");
 const { requireAuth } = require("../auth");
-const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_DOUBLES } = require("../elo");
+const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_DOUBLES, isValidTargetGames, DEFAULT_TARGET_GAMES } = require("../elo");
 const { computeDoublesStats, buildBadges } = require("../achievements");
 const { sendPushToPlayer } = require("../pushService");
 
@@ -54,10 +54,11 @@ router.get("/doubles/leaderboard", async (req, res) => {
 });
 
 // POST /api/doubles/matches - submit hasil doubles
-// Body: { team1Player2Id, team2Player1Id, team2Player2Id, winningTeam, loserGames }
+// Body: { team1Player2Id, team2Player1Id, team2Player2Id, winningTeam, loserGames, targetGames }
 // Pemain yang submit otomatis jadi salah satu dari team1 (team1Player1).
 router.post("/doubles/matches", requireAuth, async (req, res) => {
   const { team1Player2Id, team2Player1Id, team2Player2Id, winningTeam, loserGames } = req.body;
+  const targetGames = req.body.targetGames ?? DEFAULT_TARGET_GAMES;
   const team1Player1Id = req.playerId;
 
   const ids = [team1Player1Id, team1Player2Id, team2Player1Id, team2Player2Id];
@@ -70,8 +71,11 @@ router.post("/doubles/matches", requireAuth, async (req, res) => {
   if (winningTeam !== 1 && winningTeam !== 2) {
     return res.status(400).json({ error: { code: "INVALID_WINNING_TEAM", message: "winningTeam harus 1 atau 2" } });
   }
-  if (loserGames == null || loserGames < 0 || loserGames > 5 || !Number.isInteger(loserGames)) {
-    return res.status(400).json({ error: { code: "INVALID_SCORE", message: "Skor game yang kalah harus 0-5" } });
+  if (!isValidTargetGames(targetGames)) {
+    return res.status(400).json({ error: { code: "INVALID_TARGET_GAMES", message: "Format target game tidak valid" } });
+  }
+  if (loserGames == null || loserGames < 0 || loserGames > targetGames - 1 || !Number.isInteger(loserGames)) {
+    return res.status(400).json({ error: { code: "INVALID_SCORE", message: `Skor game yang kalah harus 0-${targetGames - 1}` } });
   }
 
   const players = await prisma.player.findMany({ where: { id: { in: ids } } });
@@ -90,6 +94,7 @@ router.post("/doubles/matches", requireAuth, async (req, res) => {
       team2Player2Id,
       winningTeam,
       loserGames,
+      targetGames,
       inputBy: team1Player1Id,
       matchDate: new Date(),
       confirmedT1P1: true, // yang submit otomatis dianggap konfirmasi
@@ -143,6 +148,7 @@ async function applyDoublesEloAndConfirm(tx, match, { halfPoints = false } = {})
     team2Player2Rating: t2p2.doublesRating,
     winningTeam: match.winningTeam,
     loserGames: match.loserGames,
+    targetGames: match.targetGames,
     kFactors,
   });
 
@@ -303,7 +309,7 @@ router.get("/doubles/matches/pending-for-me", requireAuth, async (req, res) => {
         matchId: m.id,
         partner,
         opponents,
-        score: `6-${m.loserGames}`,
+        score: `${m.targetGames}-${m.loserGames}`,
         result: m.winningTeam === myTeam ? "menang" : "kalah",
         submittedAt: m.createdAt,
       };
@@ -357,7 +363,7 @@ router.get("/doubles/matches", async (req, res) => {
       partner,
       opponents,
       won,
-      score: `6-${m.loserGames}`,
+      score: `${m.targetGames}-${m.loserGames}`,
       status: m.status,
       rejectReason: m.rejectReason,
       ratingChange,
