@@ -1,9 +1,8 @@
 // Perhitungan ELO.
-// SINGLE: format fleksibel (targetGames = jumlah game untuk menang set: 4/6/8, dst).
+// SINGLE & DOUBLES: format fleksibel (targetGames = jumlah game untuk menang set: 4/6/8, dst).
 //   Bonus margin pakai selisih game MENTAH (bukan rasio) + bobot panjang format,
 //   supaya format lebih pendek otomatis dapat poin lebih kecil dibanding format standar,
 //   meski dominasinya (rasio menang) sama.
-// DOUBLES: tetap format tetap (first-to-6), tidak ada opsi format.
 
 const MIN_MATCHES_LEADERBOARD_SINGLES = 1;
 const MIN_MATCHES_LEADERBOARD_DOUBLES = 2;
@@ -66,18 +65,22 @@ function calculateElo({ ratingWinner, ratingLoser, loserGames, kFactorWinner, kF
   };
 }
 
-// --- DOUBLES (format tetap, first-to-6, TIDAK ada opsi format) ---
+// --- DOUBLES (format fleksibel, sama seperti single: targetGames = 4/6/dst) ---
 // Pakai rata-rata rating tim untuk menentukan expected outcome,
 // tapi tiap pemain tetap punya rating individu sendiri yang diupdate dari titik awal masing-masing.
 function calculateDoublesElo({
   team1Player1Rating, team1Player2Rating,
   team2Player1Rating, team2Player2Rating,
   winningTeam, // 1 atau 2
-  loserGames,  // 0-5, format tetap first-to-6
+  loserGames,  // 0 s.d (targetGames-1)
   kFactors, // { t1p1, t1p2, t2p1, t2p2 }
+  targetGames = DEFAULT_TARGET_GAMES,
 }) {
-  if (loserGames < 0 || loserGames > 5) {
-    throw new Error("loserGames harus di antara 0 dan 5");
+  if (!isValidTargetGames(targetGames)) {
+    throw new Error(`targetGames harus antara ${MIN_TARGET_GAMES} dan ${MAX_TARGET_GAMES}`);
+  }
+  if (loserGames < 0 || loserGames > targetGames - 1) {
+    throw new Error(`loserGames harus di antara 0 dan ${targetGames - 1}`);
   }
   if (winningTeam !== 1 && winningTeam !== 2) {
     throw new Error("winningTeam harus 1 atau 2");
@@ -91,11 +94,15 @@ function calculateDoublesElo({
   const team1Rating = (t1p1 + t1p2) / 2;
   const team2Rating = (t2p1 + t2p2) / 2;
 
-  const diff = 6 - loserGames;
+  const diff = targetGames - loserGames;
   const m = 1 + (diff - 1) * 0.1;
+  // Bobot panjang format -- sama seperti single: format lebih pendek dari standar (6) otomatis
+  // dapat bobot lebih kecil, format lebih panjang dapat bobot lebih besar.
+  const lengthWeight = targetGames / DEFAULT_TARGET_GAMES;
   const ratingGap = Math.abs(team1Rating - team2Rating);
   const d = 2.2 / (ratingGap * 0.001 + 2.2);
   const mFinal = 1 + (m - 1) * d;
+  const combinedFactor = mFinal * lengthWeight;
 
   const eTeam1 = 1 / (1 + Math.pow(10, (team2Rating - team1Rating) / 400));
   const eTeam2 = 1 - eTeam1;
@@ -105,14 +112,15 @@ function calculateDoublesElo({
 
   const round2 = (n) => Math.round(n * 100) / 100;
 
-  const t1p1After = t1p1 + kFactors.t1p1 * mFinal * (sTeam1 - eTeam1);
-  const t1p2After = t1p2 + kFactors.t1p2 * mFinal * (sTeam1 - eTeam1);
-  const t2p1After = t2p1 + kFactors.t2p1 * mFinal * (sTeam2 - eTeam2);
-  const t2p2After = t2p2 + kFactors.t2p2 * mFinal * (sTeam2 - eTeam2);
+  const t1p1After = t1p1 + kFactors.t1p1 * combinedFactor * (sTeam1 - eTeam1);
+  const t1p2After = t1p2 + kFactors.t1p2 * combinedFactor * (sTeam1 - eTeam1);
+  const t2p1After = t2p1 + kFactors.t2p1 * combinedFactor * (sTeam2 - eTeam2);
+  const t2p2After = t2p2 + kFactors.t2p2 * combinedFactor * (sTeam2 - eTeam2);
 
   return {
     diff,
     marginMultiplier: Math.round(mFinal * 1000) / 1000,
+    lengthWeight: Math.round(lengthWeight * 1000) / 1000,
     team1Rating: round2(team1Rating),
     team2Rating: round2(team2Rating),
     t1p1After: round2(t1p1After),
