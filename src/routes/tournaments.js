@@ -1,6 +1,6 @@
 const express = require("express");
 const { requireAuth } = require("../auth");
-const { calculateElo, calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, DEFAULT_TARGET_GAMES } = require("../elo");
+const { calculateElo, calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, DEFAULT_TARGET_GAMES, isValidTargetGames } = require("../elo");
 
 const router = express.Router();
 const prisma = require("../db");
@@ -334,7 +334,7 @@ async function generateBracketMatches(tx, tournamentId, participantIds, stage) {
 // Untuk Single, participantIds berisi array id biasa: [id1, id2, id3, ...]
 // Urutan array = urutan seed/posisi yang diatur admin.
 router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) => {
-  const { name, format, type, participantIds, numGroups, numCourts, numRounds, fairTarget } = req.body;
+  const { name, format, type, participantIds, numGroups, numCourts, numRounds, fairTarget, cappuccinoTargetGames } = req.body;
   const tType = (format === "cappuccino" || format === "cappuccino_external") ? "doubles" : (type === "doubles" ? "doubles" : "singles");
 
   if (!name || !format || !Array.isArray(participantIds) || participantIds.length < 2) {
@@ -355,6 +355,10 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
     }
     if (numRounds != null && (!Number.isInteger(numRounds) || numRounds < 1 || numRounds > 30)) {
       return res.status(400).json({ error: { code: "INVALID_ROUNDS", message: "Jumlah ronde harus bilangan bulat 1-30" } });
+    }
+    // Format main sampai berapa game (4, 6 standar, dst) -- berlaku buat semua match di turnamen ini
+    if (cappuccinoTargetGames != null && !isValidTargetGames(cappuccinoTargetGames)) {
+      return res.status(400).json({ error: { code: "INVALID_TARGET_GAMES", message: "Format target game tidak valid" } });
     }
     // Mode "Rata Sempurna": fairTarget = target main tiap peserta, dijamin PERSIS lewat Golden Round.
     if (fairTarget != null && (!Number.isInteger(fairTarget) || fairTarget < 1 || fairTarget > 30)) {
@@ -405,7 +409,12 @@ router.post("/admin/tournaments", requireAuth, requireAdmin, async (req, res) =>
 
   try {
     const tournament = await prisma.$transaction(async (tx) => {
-      const t = await tx.tournament.create({ data: { name, format, type: tType } });
+      const t = await tx.tournament.create({
+        data: {
+          name, format, type: tType,
+          cappuccinoTargetGames: (format === "cappuccino" || format === "cappuccino_external") ? (cappuccinoTargetGames || DEFAULT_TARGET_GAMES) : null,
+        },
+      });
 
       const createdParticipants = [];
       for (let i = 0; i < normalized.length; i++) {
@@ -649,7 +658,7 @@ router.get("/tournaments/:id", async (req, res) => {
     const doublesIds = matches.filter((m) => m.doublesMatchId).map((m) => m.doublesMatchId);
     const [singleScores, doublesScores] = await Promise.all([
       singleIds.length ? prisma.match.findMany({ where: { id: { in: singleIds } }, select: { id: true, targetGames: true, loserGames: true } }) : [],
-      doublesIds.length ? prisma.doublesMatch.findMany({ where: { id: { in: doublesIds } }, select: { id: true, loserGames: true } }) : [],
+      doublesIds.length ? prisma.doublesMatch.findMany({ where: { id: { in: doublesIds } }, select: { id: true, loserGames: true, targetGames: true } }) : [],
     ]);
     const singleScoreById = Object.fromEntries(singleScores.map((s) => [s.id, s]));
     const doublesScoreById = Object.fromEntries(doublesScores.map((s) => [s.id, s]));
@@ -660,9 +669,10 @@ router.get("/tournaments/:id", async (req, res) => {
         const s = singleScoreById[m.singleMatchId];
         score = `${s.targetGames}-${s.loserGames}`;
       } else if (m.doublesMatchId && doublesScoreById[m.doublesMatchId]) {
-        score = `6-${doublesScoreById[m.doublesMatchId].loserGames}`;
+        const s = doublesScoreById[m.doublesMatchId];
+        score = `${s.targetGames}-${s.loserGames}`;
       } else if (m.externalLoserGames != null) {
-        score = `6-${m.externalLoserGames}`;
+        score = `${m.externalTargetGames || 6}-${m.externalLoserGames}`;
       }
       // Untuk Cappuccino, gabungkan label participant1+1b jadi 1 nama tim "A/B"
       const team1Label = m.participant1b
@@ -748,8 +758,9 @@ router.get("/tournaments/:id", async (req, res) => {
 
       matches.filter((m) => m.status === "completed").forEach((m) => {
         const loserGames = m.doublesMatchId ? doublesScoreById[m.doublesMatchId]?.loserGames : m.externalLoserGames;
+        const matchTargetGames = m.doublesMatchId ? (doublesScoreById[m.doublesMatchId]?.targetGames || 6) : (m.externalTargetGames || 6);
         if (loserGames == null) return;
-        const margin = 6 - loserGames;
+        const margin = matchTargetGames - loserGames;
         const winIsTeam1 = m.winnerParticipantId === m.participant1Id;
         // Ikutkan status "golden" tiap slot -- kalau true, match ini cuma jadi PENGISI buat orang
         // itu (sudah capai target di mode Rata Sempurna), jadi tidak dihitung ke poin/menang/game
@@ -764,7 +775,7 @@ router.get("/tournaments/:id", async (req, res) => {
           if (pid == null || golden) return;
           points[pid] = (points[pid] || 0) + margin;
           winsCount[pid] = (winsCount[pid] || 0) + 1;
-          gamesWon[pid] = (gamesWon[pid] || 0) + 6;
+          gamesWon[pid] = (gamesWon[pid] || 0) + matchTargetGames;
         });
         loserSlots.forEach(([pid, golden]) => {
           if (pid == null || golden) return;
@@ -875,19 +886,21 @@ async function submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, l
         // Sistem Cappuccino External: skor dicatat LANGSUNG di TournamentMatch, TIDAK ada
         // Match/DoublesMatch yang dibuat, TIDAK ada perhitungan ELO/rating sama sekali --
         // baik peserta terdaftar maupun tamu, hasilnya murni buat leaderboard turnamen ini saja.
+        const targetGamesCap = tournament.cappuccinoTargetGames || DEFAULT_TARGET_GAMES;
         if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
           throw Object.assign(new Error("Pemenang harus salah satu dari kedua tim di match ini"), { status: 400 });
         }
-        if (loserGames == null || loserGames < 0 || loserGames > 5) {
-          throw Object.assign(new Error("Skor harus 0-5"), { status: 400 });
+        if (loserGames == null || loserGames < 0 || loserGames > targetGamesCap - 1) {
+          throw Object.assign(new Error(`Skor harus 0-${targetGamesCap - 1}`), { status: 400 });
         }
         winnerParticipantId = winnerId;
         elo = null;
         await tx.tournamentMatch.update({
           where: { id: tmId },
-          data: { winnerParticipantId, externalLoserGames: loserGames, status: "completed" },
+          data: { winnerParticipantId, externalLoserGames: loserGames, externalTargetGames: targetGamesCap, status: "completed" },
         });
       } else if (tournament.format === "cappuccino") {
+        const targetGamesCap = tournament.cappuccinoTargetGames || DEFAULT_TARGET_GAMES;
         if (winnerId !== tm.participant1Id && winnerId !== tm.participant2Id) {
           throw Object.assign(new Error("Pemenang harus salah satu dari kedua tim di match ini"), { status: 400 });
         }
@@ -897,8 +910,8 @@ async function submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, l
         const winP2 = winningIsSide1 ? tm.participant1b : tm.participant2b;
         const loseP1 = winningIsSide1 ? tm.participant2 : tm.participant1;
         const loseP2 = winningIsSide1 ? tm.participant2b : tm.participant1b;
-        if (loserGames == null || loserGames < 0 || loserGames > 5) {
-          throw Object.assign(new Error("Skor harus 0-5"), { status: 400 });
+        if (loserGames == null || loserGames < 0 || loserGames > targetGamesCap - 1) {
+          throw Object.assign(new Error(`Skor harus 0-${targetGamesCap - 1}`), { status: 400 });
         }
 
         const ids = [winP1.player1Id, winP2.player1Id, loseP1.player1Id, loseP2.player1Id].sort((a, b) => a - b);
@@ -916,13 +929,13 @@ async function submitTournamentMatchResult(tx, { tournamentId, tmId, winnerId, l
         elo = calculateDoublesElo({
           team1Player1Rating: wp1.doublesRating, team1Player2Rating: wp2.doublesRating,
           team2Player1Rating: lp1.doublesRating, team2Player2Rating: lp2.doublesRating,
-          winningTeam: 1, loserGames, kFactors: kFactorsCap,
+          winningTeam: 1, loserGames, targetGames: targetGamesCap, kFactors: kFactorsCap,
         });
 
         const dmCap = await tx.doublesMatch.create({
           data: {
             team1Player1Id: wp1.id, team1Player2Id: wp2.id, team2Player1Id: lp1.id, team2Player2Id: lp2.id,
-            winningTeam: 1, loserGames, inputBy: submittedBy,
+            winningTeam: 1, loserGames, targetGames: targetGamesCap, inputBy: submittedBy,
             confirmedT1P1: true, confirmedT1P2: true, confirmedT2P1: true, confirmedT2P2: true,
             status: "confirmed", confirmedAt: new Date(),
             team1RatingBefore: elo.team1Rating, team2RatingBefore: elo.team2Rating, marginMultiplier: elo.marginMultiplier,
