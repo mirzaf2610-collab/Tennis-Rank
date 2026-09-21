@@ -997,6 +997,9 @@ async function renderAdmin(container) {
           <p class="muted" style="font-size:12px;margin-top:-0.5rem" id="tourney-rounds-estimate">Tambah peserta dulu buat lihat perkiraan.</p>
         </div>
         <p class="muted" style="font-size:12px;margin-top:-0.5rem">Tidak perlu main bersamaan real-time — ini cuma menentukan berapa match yang dijadwalkan.</p>
+        <label style="font-size:12px">Estimasi menit per match (buat perkiraan total durasi)</label>
+        <input id="tourney-minutes-per-match" type="number" min="1" max="120" value="15" />
+        <p class="muted" style="font-size:11px;margin-top:-0.5rem" id="tourney-minutes-hint">Rata-rata format 4 game (tanpa deuce) ≈15 menit, format 6 game ≈25 menit -- sesuaikan dengan kecepatan main klub Anda.</p>
         <button id="tourney-simulate-btn" type="button" class="btn secondary" style="margin-top:0.5rem">🔍 Simulasikan Dulu</button>
         <div id="tourney-simulate-result" style="display:none;margin-top:0.5rem;background:#f7f7f5;border-radius:8px;padding:10px;font-size:13px"></div>
       </div>
@@ -1079,6 +1082,23 @@ async function renderAdmin(container) {
   function isCappuccinoExternal() {
     return tournamentCreateWrap.querySelector("#tourney-format").value === "cappuccino_external";
   }
+
+  // Format menit jadi "X jam Y menit" biar gampang dibaca
+  function formatDuration(totalMinutes) {
+    const h = Math.floor(totalMinutes / 60);
+    const m = Math.round(totalMinutes % 60);
+    if (h === 0) return `${m} menit`;
+    if (m === 0) return `${h} jam`;
+    return `${h} jam ${m} menit`;
+  }
+
+  // Default menit per match berdasarkan format game -- referensi FAST4 Tennis (Tennis Australia):
+  // format 4 game tanpa deuce rata-rata ~15 menit, format 6 game tanpa deuce ~25 menit.
+  // Ini cuma perkiraan awal, admin bisa sesuaikan sendiri dengan kecepatan main klubnya.
+  tournamentCreateWrap.querySelector("#tourney-target-games").addEventListener("change", (e) => {
+    tournamentCreateWrap.querySelector("#tourney-minutes-per-match").value = e.target.value === "4" ? 15 : 25;
+    tournamentCreateWrap.querySelector("#tourney-simulate-result").style.display = "none";
+  });
 
   // Perkiraan berapa kali tiap peserta main, berdasarkan jumlah peserta, lapangan,
   // dan jumlah ronde yang dipilih -- cuma informasi buat bantu admin, bukan patokan pasti
@@ -1370,6 +1390,7 @@ async function renderAdmin(container) {
     const roundsMode = tournamentCreateWrap.querySelector("#tourney-rounds-mode").value;
     const targetPlays = Number(tournamentCreateWrap.querySelector("#tourney-target-plays").value);
     const fairMix = tournamentCreateWrap.querySelector("#tourney-fair-mix").checked;
+    const minutesPerMatch = Number(tournamentCreateWrap.querySelector("#tourney-minutes-per-match").value) || 15;
     const ids = participantEntries.map((_, i) => i + 1);
     const names = Object.fromEntries(participantEntries.map((e, i) => [i + 1, e.p1Name]));
 
@@ -1396,10 +1417,15 @@ async function renderAdmin(container) {
       const perPlayerRows = ids
         .map((p) => `<span style="display:inline-block;margin:2px 8px 2px 0">${names[p]}: <strong>${tournamentPlayCount[p]}x</strong>${playCount[p] > tournamentPlayCount[p] ? ` <span class="muted" style="font-size:10px">(+${playCount[p] - tournamentPlayCount[p]} golden)</span>` : ""}</span>`)
         .join("");
+      // Durasi: tiap ronde matches-nya jalan BARENGAN (paralel per lapangan), jadi total durasi
+      // = jumlah RONDE x menit per match, bukan dikali jumlah match (match dalam 1 ronde tidak
+      // menambah waktu kalau lapangannya cukup, cuma nambah kalau 1 lapangan gantian).
+      const totalDuration = schedule.length * minutesPerMatch;
 
       resultEl.style.display = "block";
       resultEl.innerHTML = `
         <div style="margin-bottom:6px"><strong>${schedule.length} ronde</strong>, total <strong>${totalMatches} match</strong> — poin turnamen: ${minT === maxT ? `tepat ${minT}x` : `${minT}-${maxT}x`} semua peserta.</div>
+        <div style="margin-bottom:6px">⏱️ Perkiraan total durasi: <strong>${formatDuration(totalDuration)}</strong> <span class="muted" style="font-size:11px">(${schedule.length} ronde &times; ${minutesPerMatch} menit/match, dengan asumsi tiap ronde lapangan-lapangannya jalan bareng)</span></div>
         <div style="margin-bottom:6px">Detail per peserta:<br/>${perPlayerRows}</div>
         <div style="margin-bottom:6px;font-size:12px;max-height:160px;overflow-y:auto;border-top:1px solid #e5e5e0;padding-top:4px">${roundLines.join("")}</div>
         <p class="muted" style="font-size:11px;margin:0">🏅 = Golden Round -- pasangan/lawan yang ditandai "(pengisi)" sudah capai target, poinnya di match itu tidak dihitung ke turnamen (tapi rating umum tetap update). Kombinasi pasangan sebenarnya nanti bisa beda, tapi jumlah ronde &amp; hasil akhirnya akan sama.</p>
@@ -1429,10 +1455,13 @@ async function renderAdmin(container) {
       .map((p) => `<span style="display:inline-block;margin:2px 8px 2px 0">${names[p]}: <strong>${playCount[p]}x</strong></span>`)
       .join("");
 
+    const totalDuration = courtsPerRound.length * minutesPerMatch;
+
     resultEl.style.display = "block";
     const courtsSummary = courtsPerRound.join(", ");
     resultEl.innerHTML = `
       <div style="margin-bottom:6px"><strong>${courtsPerRound.length} ronde</strong>, total <strong>${totalMatches} match</strong> — tiap peserta main ${playRangeText}.</div>
+      <div style="margin-bottom:6px">⏱️ Perkiraan total durasi: <strong>${formatDuration(totalDuration)}</strong> <span class="muted" style="font-size:11px">(${courtsPerRound.length} ronde &times; ${minutesPerMatch} menit/match)</span></div>
       <div style="margin-bottom:6px;font-size:12px" class="muted">Susunan lapangan per ronde: ${courtsSummary}</div>
       <div style="margin-bottom:6px">Detail per peserta:<br/>${perPlayerRows}</div>
       <p class="muted" style="font-size:11px;margin:0">Catatan: ini simulasi pasangan/jadwal acak -- pasangan sebenarnya nanti (pas turnamen benar-benar dibuat) bisa beda kombinasi, tapi jumlah ronde &amp; sebaran main per orang akan sama.</p>
