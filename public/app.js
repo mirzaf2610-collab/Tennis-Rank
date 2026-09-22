@@ -1857,9 +1857,13 @@ async function renderTournaments(container) {
       const statusBadge = t.status === "completed"
         ? `<span style="font-size:11px;background:#e0e0e0;color:#555;padding:2px 8px;border-radius:6px">Selesai</span>`
         : `<span style="font-size:11px;background:#c8e6c9;color:#1b5e20;padding:2px 8px;border-radius:6px">Berlangsung</span>`;
+      const startDate = new Date(t.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+      const dateInfo = t.status === "completed" && t.completedAt
+        ? `${startDate} &ndash; ${new Date(t.completedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
+        : `Mulai ${startDate}`;
       const item = el(`
         <div class="row" style="cursor:pointer">
-          <span><strong>${t.name}</strong><br/><span class="muted" style="font-size:12px">${typeLabel} &middot; ${formatLabel}</span></span>
+          <span><strong>${t.name}</strong><br/><span class="muted" style="font-size:12px">${typeLabel} &middot; ${formatLabel}</span><br/><span class="muted" style="font-size:11px">${dateInfo}</span></span>
           <span>${statusBadge}</span>
         </div>
       `);
@@ -2036,6 +2040,11 @@ async function renderTournamentDetail(container) {
     const formatLabel = { round_robin: "Round Robin", bracket: "Bracket/Eliminasi", group_knockout: "Setengah Kompetisi (Grup + Knockout)", cappuccino: "Sistem Cappuccino", cappuccino_external: "Sistem Cappuccino External (tidak pengaruhi rating)" }[tournament.format];
     let html = `<h2>🏆 ${tournament.name}</h2>`;
     html += `<p class="muted" style="font-size:13px">${formatLabel}${tournament.cappuccinoTargetGames ? ` (First to ${tournament.cappuccinoTargetGames})` : ""} &middot; ${tournament.status === "completed" ? "Selesai" : "Berlangsung"}</p>`;
+    const detailStartDate = new Date(tournament.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+    const detailDateInfo = tournament.status === "completed" && tournament.completedAt
+      ? `Mulai ${detailStartDate} &middot; Selesai ${new Date(tournament.completedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
+      : `Mulai ${detailStartDate}`;
+    html += `<p class="muted" style="font-size:12px;margin-top:-0.5rem">${detailDateInfo}</p>`;
     if (tournament.format === "cappuccino_external") {
       html += `<p class="muted" style="font-size:12px;background:#f3e5f5;padding:6px 10px;border-radius:8px">☕ Turnamen ini murni buat seru-seruan -- boleh ada peserta tamu (tidak terdaftar di aplikasi), dan hasilnya TIDAK pengaruh ke rating siapapun.</p>`;
     }
