@@ -424,7 +424,12 @@ async function renderLeaderboard(container) {
                 ${badge} <span class="muted" style="font-size:11px">${timeAgo(m.createdAt)}</span>
               </div>
               <div style="font-size:14px"><strong>${m.claimedWinnerText}</strong> klaim menang vs ${m.claimedLoserText} <span class="muted">(${m.score})</span> <span class="muted" style="font-size:12px">— menunggu konfirmasi</span></div>
-              ${mine ? `<button class="btn" style="margin-top:2px;background:#ffd43b;color:#1a1a1a;font-weight:700" data-confirm-pending="${m.matchId}" data-pending-type="${m.type}">✅ Konfirmasi Sekarang</button>` : ""}
+              ${mine ? `
+                <div style="display:flex;gap:6px;width:100%;margin-top:2px">
+                  <button class="btn" style="flex:1;background:#ffd43b;color:#1a1a1a;font-weight:700" data-confirm-pending="${m.matchId}" data-pending-type="${m.type}">✅ Konfirmasi</button>
+                  <button class="btn secondary" style="flex:1;color:#c62828;border-color:#c62828" data-reject-pending="${m.matchId}" data-pending-type="${m.type}">❌ Tolak</button>
+                </div>
+              ` : ""}
             </div>`;
         })
         .join("");
@@ -442,7 +447,27 @@ async function renderLeaderboard(container) {
           } catch (err) {
             alert(err.message);
             btn.disabled = false;
-            btn.textContent = "✅ Konfirmasi Sekarang";
+            btn.textContent = "✅ Konfirmasi";
+          }
+        });
+      });
+      listEl.querySelectorAll("[data-reject-pending]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const reason = prompt("Alasan menolak hasil ini (wajib diisi)?");
+          if (!reason) return;
+          btn.disabled = true;
+          btn.textContent = "Mengirim...";
+          const type = btn.dataset.pendingType;
+          const mid = btn.dataset.rejectPending;
+          try {
+            const endpoint = type === "double" ? `/doubles/matches/${mid}/reject` : `/matches/${mid}/reject`;
+            const data = await api(endpoint, { method: "POST", body: JSON.stringify({ reason }) });
+            alert(data.message || "Match ditolak, tidak masuk ke rating.");
+            loadPendingReminder();
+          } catch (err) {
+            alert(err.message);
+            btn.disabled = false;
+            btn.textContent = "❌ Tolak";
           }
         });
       });
