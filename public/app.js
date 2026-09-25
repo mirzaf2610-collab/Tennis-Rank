@@ -2435,6 +2435,158 @@ async function setupNotificationButton(wrap) {
   });
 }
 
+// Muat html2canvas dari CDN cuma sekali, pas benar-benar dibutuhkan (klik tombol download) --
+// supaya halaman Profil biasa tetap ringan, tidak ikut nge-load library ini tiap kali dibuka.
+let html2canvasPromise = null;
+function ensureHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve();
+  if (html2canvasPromise) return html2canvasPromise;
+  html2canvasPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Gagal memuat library pembuat gambar. Cek koneksi internet."));
+    document.head.appendChild(script);
+  });
+  return html2canvasPromise;
+}
+
+// Skala rating (1000-an ELO) jadi angka gaya "OVR" 40-99, biar terasa seperti kartu game.
+// Murni buat estetika kartu unduhan ini -- tidak dipakai di perhitungan rating manapun.
+function ratingToOvr(rating) {
+  const raw = 40 + (Number(rating) - 1000) / 12;
+  return Math.max(40, Math.min(99, Math.round(raw)));
+}
+
+// Bangun elemen kartu bergaya "trading card" (di luar layar, gak kelihatan user) lalu di-screenshot
+// jadi PNG pakai html2canvas dan didownload. Baru dipanggil pas tombol "Download Kartu Statistik"
+// diklik -- jadi tidak membebani render halaman Profil normal.
+async function downloadStatCard(player, btnEl) {
+  const originalText = btnEl.textContent;
+  btnEl.disabled = true;
+  btnEl.textContent = "Menyiapkan...";
+  try {
+    await ensureHtml2Canvas();
+
+    const ovrSingle = ratingToOvr(player.currentRating);
+    const ovrDouble = ratingToOvr(player.doublesRating);
+    const ovrOverall = Math.max(ovrSingle, ovrDouble);
+    const rankText = (r) => (r ? `#${r}` : "Belum Peringkat");
+    const allBadges = [...(player.singlesBadges || []), ...(player.doublesBadges || [])];
+    const seenB = new Set();
+    const uniqueBadges = allBadges.filter((b) => {
+      const key = `${b.emoji}${b.label}`;
+      if (seenB.has(key)) return false;
+      seenB.add(key);
+      return true;
+    });
+    const facetSvg = `data:image/svg+xml,${encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
+        <g fill="none" stroke="#3fd0e0" stroke-opacity="0.12" stroke-width="1">
+          <path d="M0,40 L120,0 L260,60 L400,10" />
+          <path d="M0,140 L150,90 L300,160 L400,110" />
+          <path d="M0,240 L100,190 L250,260 L400,210" />
+          <path d="M40,0 L60,300" /><path d="M180,0 L220,300" /><path d="M340,0 L300,300" />
+        </g>
+      </svg>`)}`;
+
+    const badgeIconsHtml = uniqueBadges.length
+      ? uniqueBadges.map((b) => `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:76px">
+            <div style="width:52px;height:52px;border-radius:50%;background:#161f30;border:2px solid #d4af37;box-shadow:0 0 10px rgba(212,175,55,0.5);display:flex;align-items:center;justify-content:center;font-size:24px">${b.emoji}</div>
+            <div style="font-size:10px;font-weight:700;color:#e8e8e8;text-align:center;letter-spacing:0.5px">${b.label.toUpperCase()}</div>
+          </div>`).join("")
+      : `<div style="font-size:12px;color:#6d7890">Belum ada gelar</div>`;
+
+    const card = document.createElement("div");
+    card.style.cssText = "position:fixed;top:0;left:-9999px;width:400px;height:auto;";
+    card.innerHTML = `
+      <div style="width:400px;box-sizing:border-box;background:linear-gradient(160deg,#0a1220,#141f33 60%,#0a1220);background-image:${`url('${facetSvg}')`},linear-gradient(160deg,#0a1220,#141f33 60%,#0a1220);background-size:cover;border-radius:20px;padding:4px;box-shadow:0 0 0 1px rgba(212,175,55,0.5),0 0 24px rgba(212,175,55,0.35);font-family:Arial,Helvetica,sans-serif">
+        <div style="border:2px solid #d4af37;border-radius:17px;padding:22px;position:relative;overflow:hidden">
+
+          <div style="display:flex;align-items:center;gap:16px">
+            <div style="width:84px;height:84px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 3px #d4af37,0 0 16px rgba(212,175,55,0.7);overflow:hidden;background:#1c2431;display:flex;align-items:center;justify-content:center">
+              ${player.photoUrl
+                ? `<img src="${player.photoUrl}" crossorigin="anonymous" style="width:100%;height:100%;object-fit:cover" />`
+                : `<span style="font-size:28px;font-weight:700;color:#d4af37">${(player.name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>`}
+            </div>
+            <div>
+              <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.3px">${player.name}</div>
+              <div style="display:inline-block;margin-top:6px;background:linear-gradient(90deg,#d4af37,#f5e28c);clip-path:polygon(0 0,94% 0,100% 100%,0 100%);padding:5px 20px 5px 14px;font-size:11px;font-weight:800;letter-spacing:2px;color:#0a1220">KARTU STATISTIK</div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:14px;margin-top:18px">
+            <div style="background:linear-gradient(135deg,#d4af37,#f5e28c);clip-path:polygon(14% 0,100% 0,100% 100%,0 100%,0 30%);padding:10px 22px 10px 30px">
+              <div style="font-size:10px;font-weight:800;color:#3a2f0b;letter-spacing:1px">RATING TERTINGGI</div>
+              <div style="font-size:32px;font-weight:800;color:#0a1220;line-height:1.1">${ovrOverall}</div>
+            </div>
+            <div style="font-size:11px;color:#9aa4b8;line-height:1.5">Skala 40-99 dari rating ELO<br>(${Math.round(player.currentRating)} Single / ${Math.round(player.doublesRating)} Ganda)</div>
+          </div>
+
+          <div style="margin-top:18px">
+            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px">SPESIALISASI</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div style="background:rgba(22,31,48,0.85);border:1px solid #2a3a55;border-left:4px solid #d4af37;border-radius:8px;padding:14px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:1px">TUNGGAL</div>
+                  <div style="font-size:26px;font-weight:800;color:#d4af37">${ovrSingle}</div>
+                </div>
+                <div style="font-size:11px;color:#9aa4b8;margin-top:8px;line-height:1.7">${player.matchesPlayed}x main | ${player.singlesWins}M-${player.singlesLosses}K<br>Win rate: ${player.singlesWinRate}%<br>Peringkat: ${rankText(player.singlesRank)}</div>
+                <div style="margin-top:8px;font-size:9px;font-weight:800;letter-spacing:1px;color:#0a1220;background:#3fd0e0;display:inline-block;padding:3px 10px;border-radius:3px">${player.isProvisional ? "PROVISIONAL" : "STABIL"}</div>
+              </div>
+              <div style="background:rgba(22,31,48,0.85);border:1px solid #2a3a55;border-left:4px solid #d4af37;border-radius:8px;padding:14px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:1px">GANDA</div>
+                  <div style="font-size:26px;font-weight:800;color:#d4af37">${ovrDouble}</div>
+                </div>
+                <div style="font-size:11px;color:#9aa4b8;margin-top:8px;line-height:1.7">${player.doublesMatchesPlayed}x main | ${player.doublesWins}M-${player.doublesLosses}K<br>Win rate: ${player.doublesWinRate}%<br>Peringkat: ${rankText(player.doublesRank)}</div>
+                <div style="margin-top:8px;font-size:9px;font-weight:800;letter-spacing:1px;color:#0a1220;background:#d4af37;display:inline-block;padding:3px 10px;border-radius:3px">${player.doublesIsProvisional ? "PROVISIONAL" : "STABIL"}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:18px">
+            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px">GELAR</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap">${badgeIconsHtml}</div>
+          </div>
+
+          <div style="margin-top:20px;padding-top:12px;border-top:1px solid #2a3a55;display:flex;justify-content:space-between;align-items:center">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#6d7890">PSP TENNIS RANK</div>
+            <div style="font-size:10px;color:#4a5468">${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
+          </div>
+
+        </div>
+      </div>
+    `;
+    document.body.appendChild(card);
+
+    // Tunggu foto avatar (kalau ada) selesai kemuat sebelum di-screenshot, biar gak kosong
+    const img = card.querySelector("img");
+    if (img && !img.complete) {
+      await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+    }
+    await new Promise((r) => setTimeout(r, 60));
+
+    const canvas = await window.html2canvas(card.firstElementChild, { backgroundColor: null, scale: 2, useCORS: true });
+    document.body.removeChild(card);
+
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `kartu-statistik-${(player.name || "pemain").toLowerCase().replace(/\s+/g, "-")}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  } catch (err) {
+    alert("Gagal membuat gambar: " + err.message);
+  } finally {
+    btnEl.disabled = false;
+    btnEl.textContent = originalText;
+  }
+}
+
 async function renderProfile(container) {
   container.appendChild(nav("profile"));
   const wrap = el(`
@@ -2598,7 +2750,9 @@ async function renderProfile(container) {
           <span style="font-size:12px;color:#555">Setiap kartu merah didapat karena tidak merespon konfirmasi match. Kalau sampai 5, rating dikurangi 50 poin. Konfirmasi/input match lagi ${3 - player.redCardProgress}x untuk menghapus semua kartu merah (progres: ${player.redCardProgress}/3).</span>
         </div>
       ` : ""}
+      <button id="download-card-btn" class="btn secondary" style="margin-top:1rem">📥 Download Kartu Statistik</button>
     `;
+    wrap.querySelector("#download-card-btn").addEventListener("click", (e) => downloadStatCard(player, e.target));
   } catch (err) {
     wrap.querySelector("#profile-stats").innerHTML = `<p class="error">${err.message}</p>`;
   }
