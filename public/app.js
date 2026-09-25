@@ -2481,77 +2481,106 @@ async function downloadStatCard(player, btnEl) {
       return true;
     });
     const facetSvg = `data:image/svg+xml,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
-        <g fill="none" stroke="#3fd0e0" stroke-opacity="0.12" stroke-width="1">
+      <svg xmlns="http://www.w3.org/2000/svg" width="400" height="320">
+        <g fill="none" stroke="#3fd0e0" stroke-opacity="0.22" stroke-width="1.2">
           <path d="M0,40 L120,0 L260,60 L400,10" />
           <path d="M0,140 L150,90 L300,160 L400,110" />
           <path d="M0,240 L100,190 L250,260 L400,210" />
-          <path d="M40,0 L60,300" /><path d="M180,0 L220,300" /><path d="M340,0 L300,300" />
+          <path d="M40,0 L60,320" /><path d="M180,0 L220,320" /><path d="M340,0 L300,320" />
+        </g>
+        <g fill="none" stroke="#d4af37" stroke-opacity="0.14" stroke-width="1">
+          <path d="M0,90 L90,50 L200,110 L400,60" />
+          <path d="M0,190 L110,150 L230,210 L400,160" />
         </g>
       </svg>`)}`;
 
     const badgeIconsHtml = uniqueBadges.length
       ? uniqueBadges.map((b) => `
           <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:76px">
-            <div style="width:52px;height:52px;border-radius:50%;background:#161f30;border:2px solid #d4af37;box-shadow:0 0 10px rgba(212,175,55,0.5);display:flex;align-items:center;justify-content:center;font-size:24px">${b.emoji}</div>
+            <div style="width:54px;height:54px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#2a3651,#141c2c 70%);border:2px solid #d4af37;box-shadow:0 0 0 1px rgba(255,255,255,0.15),0 0 14px rgba(212,175,55,0.65),inset 0 2px 3px rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:24px">${b.emoji}</div>
             <div style="font-size:10px;font-weight:700;color:#e8e8e8;text-align:center;letter-spacing:0.5px">${b.label.toUpperCase()}</div>
           </div>`).join("")
       : `<div style="font-size:12px;color:#6d7890">Belum ada gelar</div>`;
 
     const card = document.createElement("div");
-    card.style.cssText = "position:fixed;top:0;left:-9999px;width:400px;height:auto;";
+    card.style.cssText = "position:fixed;top:0;left:-9999px;width:410px;height:auto;";
     card.innerHTML = `
-      <div style="width:400px;box-sizing:border-box;background:linear-gradient(160deg,#0a1220,#141f33 60%,#0a1220);background-image:${`url('${facetSvg}')`},linear-gradient(160deg,#0a1220,#141f33 60%,#0a1220);background-size:cover;border-radius:20px;padding:4px;box-shadow:0 0 0 1px rgba(212,175,55,0.5),0 0 24px rgba(212,175,55,0.35);font-family:Arial,Helvetica,sans-serif">
-        <div style="border:2px solid #d4af37;border-radius:17px;padding:22px;position:relative;overflow:hidden">
+      <div style="width:410px;box-sizing:border-box;background:linear-gradient(135deg,#e8dca8,#d4af37 15%,#8a6d1f 35%,#d4af37 55%,#f5e28c 70%,#8a6d1f 90%,#d4af37);border-radius:22px;padding:5px;box-shadow:0 10px 30px rgba(0,0,0,0.55),0 0 26px rgba(212,175,55,0.4);font-family:Arial,Helvetica,sans-serif">
+        <div style="background:linear-gradient(160deg,#0a1220,#141f33 55%,#0a1220);background-image:url('${facetSvg}'),linear-gradient(160deg,#0a1220,#141f33 55%,#0a1220);background-size:cover;border:1px solid rgba(255,255,255,0.15);border-radius:18px;padding:22px;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,0.25),inset 0 0 40px rgba(0,0,0,0.4)">
 
-          <div style="display:flex;align-items:center;gap:16px">
-            <div style="width:84px;height:84px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 3px #d4af37,0 0 16px rgba(212,175,55,0.7);overflow:hidden;background:#1c2431;display:flex;align-items:center;justify-content:center">
+          <div style="position:absolute;top:-60%;left:-20%;width:70%;height:220%;background:linear-gradient(75deg,rgba(255,255,255,0) 40%,rgba(255,255,255,0.10) 48%,rgba(255,255,255,0.22) 50%,rgba(255,255,255,0.10) 52%,rgba(255,255,255,0) 60%);transform:rotate(8deg);pointer-events:none"></div>
+
+          <div style="display:flex;align-items:center;gap:16px;position:relative">
+            <div style="width:86px;height:86px;border-radius:50%;flex-shrink:0;position:relative;box-shadow:0 0 0 1px rgba(255,255,255,0.5),0 0 0 4px #d4af37,0 0 0 5px rgba(255,255,255,0.25),0 0 22px rgba(212,175,55,0.85);overflow:hidden;background:#1c2431;display:flex;align-items:center;justify-content:center">
               ${player.photoUrl
                 ? `<img src="${player.photoUrl}" crossorigin="anonymous" style="width:100%;height:100%;object-fit:cover" />`
                 : `<span style="font-size:28px;font-weight:700;color:#d4af37">${(player.name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>`}
+              <div style="position:absolute;top:0;left:0;right:0;height:45%;background:linear-gradient(180deg,rgba(255,255,255,0.35),rgba(255,255,255,0) 100%);pointer-events:none"></div>
             </div>
             <div>
-              <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.3px">${player.name}</div>
-              <div style="display:inline-block;margin-top:6px;background:linear-gradient(90deg,#d4af37,#f5e28c);clip-path:polygon(0 0,94% 0,100% 100%,0 100%);padding:5px 20px 5px 14px;font-size:11px;font-weight:800;letter-spacing:2px;color:#0a1220">KARTU STATISTIK</div>
+              <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.3px;text-shadow:0 2px 4px rgba(0,0,0,0.5)">${player.name}</div>
+              <div style="display:inline-flex;align-items:center;margin-top:6px;background:linear-gradient(180deg,#f5e28c,#d4af37 45%,#a9821f);clip-path:polygon(0 0,88% 0,100% 100%,0 100%);padding:6px 26px 6px 14px;font-size:11px;font-weight:800;letter-spacing:2px;color:#2a2308;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6),0 2px 4px rgba(0,0,0,0.35);position:relative;overflow:hidden">
+                KARTU STATISTIK
+                <div style="position:absolute;right:6px;top:0;bottom:0;width:14px;background:repeating-linear-gradient(115deg,rgba(255,255,255,0.55) 0 2px,transparent 2px 5px)"></div>
+              </div>
             </div>
           </div>
 
-          <div style="display:flex;align-items:center;gap:14px;margin-top:18px">
-            <div style="background:linear-gradient(135deg,#d4af37,#f5e28c);clip-path:polygon(14% 0,100% 0,100% 100%,0 100%,0 30%);padding:10px 22px 10px 30px">
+          <div style="margin-top:18px;position:relative">
+            <div style="display:inline-block;background:linear-gradient(180deg,#f5e28c,#d4af37 40%,#9c7a1c);clip-path:polygon(10% 0,100% 0,100% 100%,0 100%,0 28%);padding:10px 26px 10px 30px;box-shadow:inset 0 2px 0 rgba(255,255,255,0.55),inset 0 -2px 6px rgba(0,0,0,0.25),0 4px 10px rgba(0,0,0,0.35)">
               <div style="font-size:10px;font-weight:800;color:#3a2f0b;letter-spacing:1px">RATING TERTINGGI</div>
-              <div style="font-size:32px;font-weight:800;color:#0a1220;line-height:1.1">${ovrOverall}</div>
+              <div style="font-size:34px;font-weight:800;color:#0a1220;line-height:1.1;text-shadow:0 1px 0 rgba(255,255,255,0.4)">${ovrOverall}</div>
             </div>
-            <div style="font-size:11px;color:#9aa4b8;line-height:1.5">Skala 40-99 dari rating ELO<br>(${Math.round(player.currentRating)} Single / ${Math.round(player.doublesRating)} Ganda)</div>
           </div>
 
-          <div style="margin-top:18px">
-            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px">SPESIALISASI</div>
+          <div style="margin-top:20px;position:relative">
+            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px;text-shadow:0 0 8px rgba(63,208,224,0.6)">SPESIALISASI</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div style="background:rgba(22,31,48,0.85);border:1px solid #2a3a55;border-left:4px solid #d4af37;border-radius:8px;padding:14px">
+              <div style="background:linear-gradient(160deg,rgba(34,46,70,0.9),rgba(16,22,35,0.9));border:1px solid rgba(255,255,255,0.1);border-left:4px solid #d4af37;border-radius:8px;padding:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 3px 8px rgba(0,0,0,0.3)">
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
                   <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:1px">TUNGGAL</div>
-                  <div style="font-size:26px;font-weight:800;color:#d4af37">${ovrSingle}</div>
+                  <div style="font-size:26px;font-weight:800;color:#d4af37;text-shadow:0 0 10px rgba(212,175,55,0.6)">${ovrSingle}</div>
                 </div>
-                <div style="font-size:11px;color:#9aa4b8;margin-top:8px;line-height:1.7">${player.matchesPlayed}x main | ${player.singlesWins}M-${player.singlesLosses}K<br>Win rate: ${player.singlesWinRate}%<br>Peringkat: ${rankText(player.singlesRank)}</div>
-                <div style="margin-top:8px;font-size:9px;font-weight:800;letter-spacing:1px;color:#0a1220;background:#3fd0e0;display:inline-block;padding:3px 10px;border-radius:3px">${player.isProvisional ? "PROVISIONAL" : "STABIL"}</div>
+                <div style="display:flex;justify-content:space-between;margin-top:8px">
+                  <div>
+                    <div style="font-size:17px;font-weight:800;color:#fff">${Math.round(player.currentRating)}</div>
+                    <div style="font-size:9px;color:#6d7890">POINT</div>
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-size:17px;font-weight:800;color:#3fd0e0">${rankText(player.singlesRank)}</div>
+                    <div style="font-size:9px;color:#6d7890">PERINGKAT</div>
+                  </div>
+                </div>
+                <div style="font-size:11px;color:#9aa4b8;margin-top:8px;line-height:1.7">${player.matchesPlayed}x main | ${player.singlesWins}M-${player.singlesLosses}K<br>Win rate: ${player.singlesWinRate}%</div>
+                <div style="margin-top:8px;font-size:9px;font-weight:800;letter-spacing:1px;color:#0a1220;background:linear-gradient(180deg,#6ee6f5,#3fd0e0);display:inline-block;padding:3px 10px;border-radius:3px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5)">${player.isProvisional ? "PROVISIONAL" : "STABIL"}</div>
               </div>
-              <div style="background:rgba(22,31,48,0.85);border:1px solid #2a3a55;border-left:4px solid #d4af37;border-radius:8px;padding:14px">
+              <div style="background:linear-gradient(160deg,rgba(34,46,70,0.9),rgba(16,22,35,0.9));border:1px solid rgba(255,255,255,0.1);border-left:4px solid #d4af37;border-radius:8px;padding:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 3px 8px rgba(0,0,0,0.3)">
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
                   <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:1px">GANDA</div>
-                  <div style="font-size:26px;font-weight:800;color:#d4af37">${ovrDouble}</div>
+                  <div style="font-size:26px;font-weight:800;color:#d4af37;text-shadow:0 0 10px rgba(212,175,55,0.6)">${ovrDouble}</div>
                 </div>
-                <div style="font-size:11px;color:#9aa4b8;margin-top:8px;line-height:1.7">${player.doublesMatchesPlayed}x main | ${player.doublesWins}M-${player.doublesLosses}K<br>Win rate: ${player.doublesWinRate}%<br>Peringkat: ${rankText(player.doublesRank)}</div>
-                <div style="margin-top:8px;font-size:9px;font-weight:800;letter-spacing:1px;color:#0a1220;background:#d4af37;display:inline-block;padding:3px 10px;border-radius:3px">${player.doublesIsProvisional ? "PROVISIONAL" : "STABIL"}</div>
+                <div style="display:flex;justify-content:space-between;margin-top:8px">
+                  <div>
+                    <div style="font-size:17px;font-weight:800;color:#fff">${Math.round(player.doublesRating)}</div>
+                    <div style="font-size:9px;color:#6d7890">POINT</div>
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-size:17px;font-weight:800;color:#d4af37">${rankText(player.doublesRank)}</div>
+                    <div style="font-size:9px;color:#6d7890">PERINGKAT</div>
+                  </div>
+                </div>
+                <div style="font-size:11px;color:#9aa4b8;margin-top:8px;line-height:1.7">${player.doublesMatchesPlayed}x main | ${player.doublesWins}M-${player.doublesLosses}K<br>Win rate: ${player.doublesWinRate}%</div>
+                <div style="margin-top:8px;font-size:9px;font-weight:800;letter-spacing:1px;color:#0a1220;background:linear-gradient(180deg,#f5e28c,#d4af37);display:inline-block;padding:3px 10px;border-radius:3px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5)">${player.doublesIsProvisional ? "PROVISIONAL" : "STABIL"}</div>
               </div>
             </div>
           </div>
 
-          <div style="margin-top:18px">
-            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px">GELAR</div>
+          <div style="margin-top:18px;position:relative">
+            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px;text-shadow:0 0 8px rgba(63,208,224,0.6)">GELAR</div>
             <div style="display:flex;gap:14px;flex-wrap:wrap">${badgeIconsHtml}</div>
           </div>
 
-          <div style="margin-top:20px;padding-top:12px;border-top:1px solid #2a3a55;display:flex;justify-content:space-between;align-items:center">
+          <div style="margin-top:20px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.12);display:flex;justify-content:space-between;align-items:center;position:relative">
             <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#6d7890">PSP TENNIS RANK</div>
             <div style="font-size:10px;color:#4a5468">${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
           </div>
