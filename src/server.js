@@ -48,12 +48,12 @@ async function markNoResponse(tx, playerId) {
   }
 }
 
-// Auto-confirm match yang statusnya masih "pending" lebih dari 3 hari (misal lawan tidak
+// Auto-confirm match yang statusnya masih "pending" lebih dari 2x24 jam (misal lawan tidak
 // pernah konfirmasi). Yang menang tetap dapat poin, tapi cuma SETENGAH dari perhitungan normal.
 // Pihak yang tidak merespon dicatat "tidak konfirmasi"-nya, dan di-ban otomatis kalau sudah 5x.
 const prismaForAutoConfirm = require("./db");
 async function autoConfirmAbandonedMatches() {
-  const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   try {
     // --- SINGLE ---
     const pendingSingles = await prismaForAutoConfirm.match.findMany({
@@ -65,7 +65,7 @@ async function autoConfirmAbandonedMatches() {
         await markNoResponse(tx, nonResponderId);
         await applyEloAndConfirm(tx, match, { halfPoints: true });
       });
-      console.log(`Match single #${match.id} auto-confirmed (3 hari tidak direspon, poin setengah).`);
+      console.log(`Match single #${match.id} auto-confirmed (2x24 jam tidak direspon, poin setengah).`);
     }
 
     // --- GANDA ---
@@ -83,7 +83,7 @@ async function autoConfirmAbandonedMatches() {
         }
         await applyDoublesEloAndConfirm(tx, match, { halfPoints: true });
       });
-      console.log(`Match ganda #${match.id} auto-confirmed (3 hari tidak direspon, poin setengah).`);
+      console.log(`Match ganda #${match.id} auto-confirmed (2x24 jam tidak direspon, poin setengah).`);
     }
   } catch (err) {
     console.error("Auto-confirm gagal:", err.message);
