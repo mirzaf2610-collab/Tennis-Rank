@@ -330,7 +330,13 @@ async function renderLeaderboard(container) {
         </select>
       </div>
       <div id="lb-list">Memuat...</div>
-      <p class="muted" style="font-size:11px;margin-top:0.5rem">🟥 Kartu merah berarti player tidak respon konfirmasi. 5x kartu merah, poin akan dikurang 50. 3x respon, kartu merah akan reset ke 0 lagi.</p>
+      <div class="muted" style="font-size:11px;margin-top:0.5rem">
+        🟥 Kartu merah berarti player tidak respon konfirmasi dalam 2x24 jam.
+        <ul style="margin:4px 0 0;padding-left:18px">
+          <li>5x kartu merah, poin akan dikurang 50.</li>
+          <li>Kartu merah akan hilang jika player Input / Konfirmasi hasil pertandingan minimal 3 kali.</li>
+        </ul>
+      </div>
     </div>
   `);
   container.appendChild(wrap);
@@ -2287,8 +2293,7 @@ async function renderRules(container) {
       </p>
 
       <p class="muted" style="font-size:14px;margin-top:1rem;border-top:1px solid #eee;padding-top:1rem;line-height:1.6">
-        Aplikasi ini khusus internal PSP Tennis Club. Kalau ingin dibuatkan untuk komunitas lain,
-        silakan kontak admin via email PSPClub2026@gmail.com (MF).
+        (By MF)
       </p>
     </div>
   `);
