@@ -2453,9 +2453,19 @@ function ensureHtml2Canvas() {
 
 // Skala rating (1000-an ELO) jadi angka gaya "OVR" 40-99, biar terasa seperti kartu game.
 // Murni buat estetika kartu unduhan ini -- tidak dipakai di perhitungan rating manapun.
+// Skala rating (ELO) jadi "OVR" gaya kartu game, 40-99, murni buat estetika kartu unduhan --
+// tidak dipakai di perhitungan rating manapun. Pakai kurva exponential-approach (bukan garis
+// lurus): makin tinggi rating, kenaikan OVR-nya makin melambat, MENDEKATI 99 terus tapi secara
+// matematis tidak pernah benar-benar pas 99 -- baru dibulatkan jadi tampil "99" di rating yang
+// sangat tinggi (~4800+), jauh di luar jangkauan wajar komunitas, jadi OVR-nya tetap bisa
+// membedakan pemain top sekalipun rating-nya terus naik (beda dgn rumus garis lurus yang dulu
+// sudah mentok 99 di rating ~1700).
 function ratingToOvr(rating) {
-  const raw = 40 + (Number(rating) - 1000) / 12;
-  return Math.max(40, Math.min(99, Math.round(raw)));
+  const lo = 40, hi = 99;
+  const baseRating = 1500, baseTarget = 80, floor = 1000;
+  const S = -(baseRating - floor) / Math.log((hi - baseTarget) / (hi - lo));
+  const raw = hi - (hi - lo) * Math.exp(-(Number(rating) - floor) / S);
+  return Math.max(lo, Math.min(hi, Math.round(raw)));
 }
 
 // Bangun elemen kartu bergaya "trading card" (di luar layar, gak kelihatan user) lalu di-screenshot
