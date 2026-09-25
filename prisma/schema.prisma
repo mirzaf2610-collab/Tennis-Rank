@@ -35,6 +35,11 @@ model Player {
   isAdmin        Boolean  @default(false) @map("is_admin")
   isBanned       Boolean  @default(false) @map("is_banned")
   noResponseCount Int     @default(0) @map("no_response_count")
+  // "Kartu merah": dipicu tiap 5x tidak merespon (bukan ban lagi -- rating dikurangi 50 &
+  // hitungan noResponseCount direset ke 0, siklus berulang). Hilang otomatis kalau pemain
+  // sudah konfirmasi/input match sebanyak 3x (dianggap sudah aktif lagi).
+  hasRedCard      Boolean @default(false) @map("has_red_card")
+  redCardProgress Int     @default(0) @map("red_card_progress")
   isDummy        Boolean  @default(false) @map("is_dummy")
   pendingName    String?  @map("pending_name") // nama baru yang diajukan, nunggu approval admin
   createdAt      DateTime @default(now()) @map("created_at")
