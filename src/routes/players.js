@@ -67,9 +67,10 @@ router.get("/recent-matches", async (req, res) => {
 });
 
 // GET /api/pending-matches - match single+ganda yang MASIH menunggu konfirmasi (belum
-// masuk hitungan rating), publik tanpa login. Sekadar pengingat di halaman Ranking
-// supaya semua orang tahu ada hasil yang belum dikonfirmasi -- BUKAN buat konfirmasi
-// langsung dari sini (konfirmasi tetap lewat halaman "Menunggu Konfirmasi" masing-masing).
+// masuk hitungan rating), publik tanpa login. Selain jadi pengingat di halaman Ranking,
+// tiap baris juga menyertakan ID peserta & status konfirmasi tiap slot supaya frontend bisa
+// tampilkan tombol "Konfirmasi" langsung ke peserta yang bersangkutan (bukan cuma di tab
+// "Menunggu Konfirmasi").
 router.get("/pending-matches", async (req, res) => {
   const [singles, doubles] = await Promise.all([
     prisma.match.findMany({
@@ -88,11 +89,16 @@ router.get("/pending-matches", async (req, res) => {
 
   const singleItems = singles.map((m) => ({
     type: "single",
+    matchId: m.id,
     createdAt: m.createdAt,
     // Ini klaim dari yang input, belum tentu final -- makanya masih "menunggu konfirmasi"
     claimedWinnerText: m.winner.name,
     claimedLoserText: m.loser.name,
     score: `${m.targetGames}-${m.loserGames}`,
+    winnerId: m.winnerId,
+    loserId: m.loserId,
+    confirmedByWinner: m.confirmedByWinner,
+    confirmedByLoser: m.confirmedByLoser,
   }));
 
   const doubleItems = doubles.map((m) => {
@@ -102,10 +108,19 @@ router.get("/pending-matches", async (req, res) => {
     const claimedLoserText = m.winningTeam === 1 ? team2 : team1;
     return {
       type: "double",
+      matchId: m.id,
       createdAt: m.createdAt,
       claimedWinnerText,
       claimedLoserText,
       score: `${m.targetGames}-${m.loserGames}`,
+      team1Player1Id: m.team1Player1Id,
+      team1Player2Id: m.team1Player2Id,
+      team2Player1Id: m.team2Player1Id,
+      team2Player2Id: m.team2Player2Id,
+      confirmedT1P1: m.confirmedT1P1,
+      confirmedT1P2: m.confirmedT1P2,
+      confirmedT2P1: m.confirmedT2P1,
+      confirmedT2P2: m.confirmedT2P2,
     };
   });
 
