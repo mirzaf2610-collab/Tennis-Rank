@@ -509,7 +509,7 @@ async function renderLeaderboard(container) {
   const PAGE_SIZE = 10;
   const TRACK_HEIGHT = 180;
   let fullLeaderboard = [];
-  let medalsSummary = {}; // playerId -> {gold,silver,bronze} -- dimuat sekali, dipakai kolom Trophy Case
+  let medalsSummary = {}; // playerId -> {gold,silver,bronze} -- ditempel di kolom Pemain, bukan kolom terpisah
   api("/medals-summary").then((d) => { medalsSummary = d.medals || {}; renderPage(); }).catch(() => {});
 
   function renderPage() {
@@ -523,7 +523,7 @@ async function renderLeaderboard(container) {
 
     // Render SEMUA baris (tidak di-slice) -> body-nya di-scroll native oleh browser,
     // persis seperti scroll horizontal yang sudah smooth, bukan lompat per baris.
-    const medalColors = { gold: "#d4af37", silver: "#9aa0a6", bronze: "#b5691a" };
+    const medalEmoji = { gold: "🥇", silver: "🥈", bronze: "🥉" };
     const rows = fullLeaderboard
       .map((p) => {
         const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
@@ -533,22 +533,21 @@ async function renderLeaderboard(container) {
           ? ` <span title="${p.noResponseCount}x tidak respon konfirmasi" style="font-size:11px">${"🟥".repeat(p.noResponseCount)}</span>`
           : "";
         const m = medalsSummary[p.id];
-        const trophyCase = m && (m.gold || m.silver || m.bronze)
-          ? ["gold", "silver", "bronze"].filter((k) => m[k] > 0).map((k) =>
-              `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:6px"><span style="width:16px;height:16px;border-radius:50%;background:${medalColors[k]};color:#fff;font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">${k === "gold" ? 1 : k === "silver" ? 2 : 3}</span><span style="font-size:11px">&times;${m[k]}</span></span>`
-            ).join("")
-          : `<span class="muted">-</span>`;
+        const medals = m && (m.gold || m.silver || m.bronze)
+          ? " " + ["gold", "silver", "bronze"].filter((k) => m[k] > 0).map((k) =>
+              `<span title="${m[k]}x juara ${k === "gold" ? 1 : k === "silver" ? 2 : 3}" style="font-size:12px">${medalEmoji[k].repeat(m[k])}</span>`
+            ).join(" ")
+          : "";
         return `
           <tr>
             <td>${p.rank}</td>
-            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}${redCards}</td>
+            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}${redCards}${medals}</td>
             <td>${Math.round(p.currentRating)}</td>
             <td>${p.matchesPlayed}</td>
             <td>${p.wins}</td>
             <td>${p.losses}</td>
             <td>${p.winRate}%</td>
             <td style="font-size:11px">${gelarText}</td>
-            <td style="white-space:nowrap">${trophyCase}</td>
           </tr>`;
       })
       .join("");
@@ -572,7 +571,7 @@ async function renderLeaderboard(container) {
           <div id="lb-table-wrap" style="overflow-x:auto">
             <table class="lb-table">
               <thead style="position:sticky;top:0;background:#fff;z-index:1">
-                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Trophy Case</th></tr>
+                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
@@ -2610,11 +2609,11 @@ async function downloadStatCard(player, medals, btnEl) {
 
           ${medals.length > 0 ? `
           <div style="margin-top:18px;position:relative">
-            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px;text-shadow:0 0 8px rgba(63,208,224,0.6)">JUARA TURNAMEN</div>
+            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px;text-shadow:0 0 8px rgba(63,208,224,0.6)">KOLEKSI MEDALI</div>
             <div style="display:flex;gap:18px">
-              <div style="display:flex;align-items:center;gap:6px"><span style="width:28px;height:28px;border-radius:50%;background:#d4af37;color:#2a2308;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">1</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 1).length}</span></div>
-              <div style="display:flex;align-items:center;gap:6px"><span style="width:28px;height:28px;border-radius:50%;background:#9aa0a6;color:#20242a;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">2</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 2).length}</span></div>
-              <div style="display:flex;align-items:center;gap:6px"><span style="width:28px;height:28px;border-radius:50%;background:#b5691a;color:#2a1608;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">3</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 3).length}</span></div>
+              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:26px">🥇</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 1).length}</span></div>
+              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:26px">🥈</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 2).length}</span></div>
+              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:26px">🥉</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 3).length}</span></div>
             </div>
           </div>
           ` : ""}
@@ -2767,11 +2766,11 @@ async function renderProfile(container) {
       .join("");
     const rankText = (r) => (r ? `#${r}` : "Belum Peringkat");
     const winRateText = (w) => `${Math.round(w * 10) / 10}`;
-    const medalColors = { 1: "#d4af37", 2: "#9aa0a6", 3: "#b5691a" };
+    const medalEmojiMap = { 1: "🥇", 2: "🥈", 3: "🥉" };
     const medalsHtml = medals
       .map((m) => `
         <div class="row" style="gap:10px">
-          <span style="width:26px;height:26px;border-radius:50%;background:${medalColors[m.place]};color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${m.place}</span>
+          <span style="font-size:22px;flex-shrink:0">${medalEmojiMap[m.place]}</span>
           <span style="font-size:14px">${m.tournamentName}</span>
         </div>`)
       .join("");
