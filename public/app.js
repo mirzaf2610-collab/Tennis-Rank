@@ -509,6 +509,8 @@ async function renderLeaderboard(container) {
   const PAGE_SIZE = 10;
   const TRACK_HEIGHT = 180;
   let fullLeaderboard = [];
+  let medalsSummary = {}; // playerId -> {gold,silver,bronze} -- dimuat sekali, dipakai kolom Trophy Case
+  api("/medals-summary").then((d) => { medalsSummary = d.medals || {}; renderPage(); }).catch(() => {});
 
   function renderPage() {
     const list = wrap.querySelector("#lb-list");
@@ -521,6 +523,7 @@ async function renderLeaderboard(container) {
 
     // Render SEMUA baris (tidak di-slice) -> body-nya di-scroll native oleh browser,
     // persis seperti scroll horizontal yang sudah smooth, bukan lompat per baris.
+    const medalColors = { gold: "#d4af37", silver: "#9aa0a6", bronze: "#b5691a" };
     const rows = fullLeaderboard
       .map((p) => {
         const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
@@ -529,6 +532,12 @@ async function renderLeaderboard(container) {
         const redCards = p.noResponseCount > 0
           ? ` <span title="${p.noResponseCount}x tidak respon konfirmasi" style="font-size:11px">${"🟥".repeat(p.noResponseCount)}</span>`
           : "";
+        const m = medalsSummary[p.id];
+        const trophyCase = m && (m.gold || m.silver || m.bronze)
+          ? ["gold", "silver", "bronze"].filter((k) => m[k] > 0).map((k) =>
+              `<span style="display:inline-flex;align-items:center;gap:2px;margin-right:6px"><span style="width:16px;height:16px;border-radius:50%;background:${medalColors[k]};color:#fff;font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">${k === "gold" ? 1 : k === "silver" ? 2 : 3}</span><span style="font-size:11px">&times;${m[k]}</span></span>`
+            ).join("")
+          : `<span class="muted">-</span>`;
         return `
           <tr>
             <td>${p.rank}</td>
@@ -539,6 +548,7 @@ async function renderLeaderboard(container) {
             <td>${p.losses}</td>
             <td>${p.winRate}%</td>
             <td style="font-size:11px">${gelarText}</td>
+            <td style="white-space:nowrap">${trophyCase}</td>
           </tr>`;
       })
       .join("");
@@ -562,7 +572,7 @@ async function renderLeaderboard(container) {
           <div id="lb-table-wrap" style="overflow-x:auto">
             <table class="lb-table">
               <thead style="position:sticky;top:0;background:#fff;z-index:1">
-                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th></tr>
+                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Trophy Case</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
