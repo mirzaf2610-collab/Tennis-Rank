@@ -462,10 +462,13 @@ async function renderLeaderboard(container) {
         const noRespText = p.noResponseCount > 0
           ? `<span style="color:#c62828">${p.noResponseCount}x</span>`
           : `<span class="muted">0</span>`;
+        const redCardBadge = p.hasRedCard
+          ? ` <span title="Kartu Merah: kena penalti karena 5x tidak merespon. Hilang otomatis setelah 3x konfirmasi/input match lagi." style="font-size:11px">🟥</span>`
+          : "";
         return `
           <tr>
             <td>${p.rank}</td>
-            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}</td>
+            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}${redCardBadge}</td>
             <td>${Math.round(p.currentRating)}</td>
             <td>${p.matchesPlayed}</td>
             <td>${p.wins}</td>
@@ -2246,7 +2249,10 @@ async function renderRules(container) {
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
         Setiap kali match auto-confirmed karena Anda tidak merespon dalam 2x24 jam, tercatat 1x "tidak konfirmasi" di profil Anda
-        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis diblokir dan hanya bisa dibuka kembali oleh admin.
+        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, Anda kena <strong>🟥 Kartu Merah</strong>: rating dikurangi 50 poin
+        dan hitungan "tidak konfirmasi" direset ke 0 (siklusnya bisa berulang kalau kebiasaan tidak berubah).
+        Kartu Merah ini kelihatan di tabel ranking sebagai penanda ke semua orang, dan otomatis hilang begitu Anda aktif lagi --
+        konfirmasi atau input hasil match (single/ganda, boleh campur) sebanyak <strong>3 kali</strong>.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
@@ -2501,6 +2507,12 @@ async function renderProfile(container) {
       </div>
       <div class="row"><span>Status Single</span><span>${player.isProvisional ? "Provisional" : "Stabil"}</span></div>
       <div class="row"><span>Status Ganda</span><span>${player.doublesIsProvisional ? "Provisional" : "Stabil"}</span></div>
+      ${player.hasRedCard ? `
+        <div class="row" style="background:#fdecea;border-radius:8px;margin-top:0.5rem;flex-direction:column;align-items:flex-start;gap:2px">
+          <span style="font-weight:600;color:#c62828">🟥 Kartu Merah aktif</span>
+          <span style="font-size:12px;color:#555">Kena penalti -50 rating karena 5x tidak merespon. Konfirmasi/input match lagi ${3 - player.redCardProgress}x untuk menghapus penanda ini (progres: ${player.redCardProgress}/3).</span>
+        </div>
+      ` : ""}
     `;
   } catch (err) {
     wrap.querySelector("#profile-stats").innerHTML = `<p class="error">${err.message}</p>`;
