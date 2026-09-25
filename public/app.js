@@ -330,6 +330,7 @@ async function renderLeaderboard(container) {
         </select>
       </div>
       <div id="lb-list">Memuat...</div>
+      <p class="muted" style="font-size:11px;margin-top:0.5rem">🟥 Kartu merah berarti player tidak respon konfirmasi. 5x kartu merah, poin akan dikurang 50. 3x respon, kartu merah akan reset ke 0 lagi.</p>
     </div>
   `);
   container.appendChild(wrap);
@@ -459,23 +460,19 @@ async function renderLeaderboard(container) {
         const badgeTexts = (p.badges || []).map((b) => `${b.emoji} ${b.label}`);
         if (p.matchesPlayed === maxMatches && p.matchesPlayed > 15) badgeTexts.push(`⚡ Antu Lapangan`);
         const gelarText = badgeTexts.length ? badgeTexts.join("<br/>") : `<span class="muted">-</span>`;
-        const noRespText = p.noResponseCount > 0
-          ? `<span style="color:#c62828">${p.noResponseCount}x</span>`
-          : `<span class="muted">0</span>`;
-        const redCardBadge = p.hasRedCard
-          ? ` <span title="Kartu Merah: kena penalti karena 5x tidak merespon. Hilang otomatis setelah 3x konfirmasi/input match lagi." style="font-size:11px">🟥</span>`
+        const redCards = p.noResponseCount > 0
+          ? ` <span title="${p.noResponseCount}x tidak respon konfirmasi" style="font-size:11px">${"🟥".repeat(p.noResponseCount)}</span>`
           : "";
         return `
           <tr>
             <td>${p.rank}</td>
-            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}${redCardBadge}</td>
+            <td>${avatarHtml(p.photoUrl, p.name, 22)} ${p.name}${redCards}</td>
             <td>${Math.round(p.currentRating)}</td>
             <td>${p.matchesPlayed}</td>
             <td>${p.wins}</td>
             <td>${p.losses}</td>
             <td>${p.winRate}%</td>
             <td style="font-size:11px">${gelarText}</td>
-            <td>${noRespText}</td>
           </tr>`;
       })
       .join("");
@@ -499,7 +496,7 @@ async function renderLeaderboard(container) {
           <div id="lb-table-wrap" style="overflow-x:auto">
             <table class="lb-table">
               <thead style="position:sticky;top:0;background:#fff;z-index:1">
-                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th><th>Tdk Respon</th></tr>
+                <tr><th>#</th><th>Pemain</th><th>Poin</th><th>Main</th><th>W</th><th>L</th><th>Win Rate</th><th>Gelar</th></tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
@@ -2248,11 +2245,12 @@ async function renderRules(container) {
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
-        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 2x24 jam, tercatat 1x "tidak konfirmasi" di profil Anda
-        (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, Anda kena <strong>🟥 Kartu Merah</strong>: rating dikurangi 50 poin
-        dan hitungan "tidak konfirmasi" direset ke 0 (siklusnya bisa berulang kalau kebiasaan tidak berubah).
-        Kartu Merah ini kelihatan di tabel ranking sebagai penanda ke semua orang, dan otomatis hilang begitu Anda aktif lagi --
-        konfirmasi atau input hasil match (single/ganda, boleh campur) sebanyak <strong>3 kali</strong>.
+        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 2x24 jam, Anda dapat 1x <strong>🟥 Kartu Merah</strong> --
+        langsung kelihatan di sebelah nama Anda di tabel ranking (bisa dilihat semua orang), bertambah tiap kali kejadian lagi.
+        Kalau sudah sampai <strong>5 kartu merah</strong>, rating Anda dikurangi 50 poin dan semua kartu merahnya direset ke 0
+        (siklusnya bisa berulang kalau kebiasaan tidak berubah).
+        Kartu merah juga otomatis hilang lebih cepat begitu Anda aktif lagi -- konfirmasi atau input hasil match
+        (single/ganda, boleh campur) sebanyak <strong>3 kali</strong>.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">6. Leaderboard</h3>
@@ -2507,10 +2505,10 @@ async function renderProfile(container) {
       </div>
       <div class="row"><span>Status Single</span><span>${player.isProvisional ? "Provisional" : "Stabil"}</span></div>
       <div class="row"><span>Status Ganda</span><span>${player.doublesIsProvisional ? "Provisional" : "Stabil"}</span></div>
-      ${player.hasRedCard ? `
+      ${player.noResponseCount > 0 ? `
         <div class="row" style="background:#fdecea;border-radius:8px;margin-top:0.5rem;flex-direction:column;align-items:flex-start;gap:2px">
-          <span style="font-weight:600;color:#c62828">🟥 Kartu Merah aktif</span>
-          <span style="font-size:12px;color:#555">Kena penalti -50 rating karena 5x tidak merespon. Konfirmasi/input match lagi ${3 - player.redCardProgress}x untuk menghapus penanda ini (progres: ${player.redCardProgress}/3).</span>
+          <span style="font-weight:600;color:#c62828">${"🟥".repeat(player.noResponseCount)} ${player.noResponseCount}/5 Kartu Merah</span>
+          <span style="font-size:12px;color:#555">Setiap kartu merah didapat karena tidak merespon konfirmasi match. Kalau sampai 5, rating dikurangi 50 poin. Konfirmasi/input match lagi ${3 - player.redCardProgress}x untuk menghapus semua kartu merah (progres: ${player.redCardProgress}/3).</span>
         </div>
       ` : ""}
     `;
