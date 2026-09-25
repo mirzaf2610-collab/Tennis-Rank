@@ -2538,7 +2538,7 @@ async function downloadStatCard(player, btnEl) {
 
           <div style="margin-top:18px;position:relative">
             <div style="display:block;width:100%;box-sizing:border-box;background:linear-gradient(180deg,#f5e28c,#d4af37 40%,#9c7a1c);border-radius:6px;border-left:5px solid #fff8de;padding:12px 20px;box-shadow:0 4px 10px rgba(0,0,0,0.35)">
-              <div style="font-size:10px;font-weight:800;color:#3a2f0b;letter-spacing:1px">RATING TERTINGGI</div>
+              <div style="font-size:10px;font-weight:800;color:#3a2f0b;letter-spacing:1px">OVR</div>
               <div style="font-size:34px;font-weight:800;color:#0a1220;line-height:1.2">${ovrOverall}</div>
             </div>
           </div>
@@ -2589,7 +2589,7 @@ async function downloadStatCard(player, btnEl) {
           </div>
 
           <div style="margin-top:20px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.12);display:flex;justify-content:space-between;align-items:center;position:relative">
-            <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#6d7890">PSP TENNIS RANK</div>
+            <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#c7cfdd">PSP TENNIS RANK</div>
             <div style="font-size:10px;color:#4a5468">${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
           </div>
 
@@ -2729,56 +2729,36 @@ async function renderProfile(container) {
     const seen = new Set();
     const badgeChips = allBadges
       .filter((b) => { const key = `${b.emoji}${b.label}`; if (seen.has(key)) return false; seen.add(key); return true; })
-      .map((b) => `<div style="background:#161f30;border:1px solid #d4af37;padding:6px 14px;font-size:12px;font-weight:700;color:#d4af37">${b.emoji} ${b.label}</div>`)
+      .map((b) => `<span style="display:inline-block;background:#fff3cd;border:1px solid #f0d68a;border-radius:20px;padding:4px 12px;font-size:12px">${b.emoji} ${b.label}</span>`)
       .join("");
     const rankText = (r) => (r ? `#${r}` : "Belum Peringkat");
     const winRateText = (w) => `${Math.round(w * 10) / 10}`;
 
     wrap.querySelector("#profile-stats").innerHTML = `
-      <div style="background:#101826;border:1px solid #223047;border-radius:4px;overflow:hidden">
-        <div style="height:4px;width:100%;background:#d4af37"></div>
-        <div style="padding:18px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #223047">
-          <div style="border:2px solid #d4af37;border-radius:50%;display:inline-flex">${avatarHtml(player.photoUrl, player.name, 56)}</div>
-          <div style="display:flex;flex-direction:column;gap:3px">
-            <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:0.3px">${player.name}</div>
-            <div style="font-size:10px;letter-spacing:2px;color:#3fd0e0;font-weight:700">KARTU STATISTIK</div>
-          </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:0.75rem">
+        ${avatarHtml(player.photoUrl, player.name, 56)}
+        <h2 style="margin:0">${player.name}</h2>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:0.75rem">
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:4px">
+          <span class="muted" style="font-size:12px;font-weight:600">TUNGGAL</span>
+          <span style="font-size:24px;font-weight:700">${Math.round(player.currentRating)}</span>
+          <span class="muted" style="font-size:12px">Peringkat: ${rankText(player.singlesRank)}</span>
+          <span class="muted" style="font-size:12px">${player.matchesPlayed}x main &middot; ${player.singlesWins}M-${player.singlesLosses}K &middot; ${winRateText(player.singlesWinRate)}%</span>
+          <span class="muted" style="font-size:11px">${player.isProvisional ? "Provisional" : "Stabil"}</span>
         </div>
-        <div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div style="background:#161f30;border:1px solid #223047;border-left:3px solid #d4af37;padding:12px;display:flex;flex-direction:column;gap:8px">
-              <div style="font-size:11px;letter-spacing:1.5px;color:#3fd0e0;font-weight:700">TUNGGAL</div>
-              <div>
-                <div style="font-family:'Courier New',monospace;font-size:30px;font-weight:700;color:#fff;line-height:1">${Math.round(player.currentRating)}</div>
-                <div style="font-size:10px;color:#6d7890;margin-top:2px">POINT</div>
-              </div>
-              <div>
-                <div style="font-family:'Courier New',monospace;font-size:16px;font-weight:700;color:#d4af37;line-height:1">${rankText(player.singlesRank)}</div>
-                <div style="font-size:10px;color:#6d7890;margin-top:2px">PERINGKAT SAAT INI</div>
-              </div>
-              <div style="font-size:11px;color:#9aa4b8;line-height:1.6">${player.matchesPlayed}x main &middot; ${player.singlesWins}M-${player.singlesLosses}K<br>Win rate ${winRateText(player.singlesWinRate)}%</div>
-              <div style="align-self:flex-end;margin-top:2px;font-size:9px;letter-spacing:1px;font-weight:700;color:#101826;background:#3fd0e0;padding:2px 8px">${player.isProvisional ? "PROVISIONAL" : "STABIL"}</div>
-            </div>
-            <div style="background:#161f30;border:1px solid #223047;border-left:3px solid #d4af37;padding:12px;display:flex;flex-direction:column;gap:8px">
-              <div style="font-size:11px;letter-spacing:1.5px;color:#3fd0e0;font-weight:700">GANDA</div>
-              <div>
-                <div style="font-family:'Courier New',monospace;font-size:30px;font-weight:700;color:#fff;line-height:1">${Math.round(player.doublesRating)}</div>
-                <div style="font-size:10px;color:#6d7890;margin-top:2px">POINT</div>
-              </div>
-              <div>
-                <div style="font-family:'Courier New',monospace;font-size:16px;font-weight:700;color:#d4af37;line-height:1">${rankText(player.doublesRank)}</div>
-                <div style="font-size:10px;color:#6d7890;margin-top:2px">PERINGKAT SAAT INI</div>
-              </div>
-              <div style="font-size:11px;color:#9aa4b8;line-height:1.6">${player.doublesMatchesPlayed}x main &middot; ${player.doublesWins}M-${player.doublesLosses}K<br>Win rate ${winRateText(player.doublesWinRate)}%</div>
-              <div style="align-self:flex-end;margin-top:2px;font-size:9px;letter-spacing:1px;font-weight:700;color:#101826;background:#d4af37;padding:2px 8px">${player.doublesIsProvisional ? "PROVISIONAL" : "STABIL"}</div>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:11px;letter-spacing:1.5px;color:#3fd0e0;font-weight:700;margin-bottom:8px">GELAR</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              ${badgeChips || `<div style="font-size:12px;color:#6d7890">Belum ada gelar. Terus main untuk dapat gelar!</div>`}
-            </div>
-          </div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:4px">
+          <span class="muted" style="font-size:12px;font-weight:600">GANDA</span>
+          <span style="font-size:24px;font-weight:700">${Math.round(player.doublesRating)}</span>
+          <span class="muted" style="font-size:12px">Peringkat: ${rankText(player.doublesRank)}</span>
+          <span class="muted" style="font-size:12px">${player.doublesMatchesPlayed}x main &middot; ${player.doublesWins}M-${player.doublesLosses}K &middot; ${winRateText(player.doublesWinRate)}%</span>
+          <span class="muted" style="font-size:11px">${player.doublesIsProvisional ? "Provisional" : "Stabil"}</span>
+        </div>
+      </div>
+      <div style="margin-bottom:0.5rem">
+        <span class="muted" style="font-size:12px;font-weight:600">GELAR</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          ${badgeChips || `<span class="muted" style="font-size:12px">Belum ada gelar. Terus main untuk dapat gelar!</span>`}
         </div>
       </div>
       ${player.noResponseCount > 0 ? `
