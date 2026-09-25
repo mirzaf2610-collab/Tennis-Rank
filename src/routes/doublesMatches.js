@@ -120,7 +120,7 @@ router.post("/doubles/matches", requireAuth, async (req, res) => {
 });
 
 // Fungsi inti: terapkan hasil ELO ke match ganda & keempat pemain. Dipakai baik untuk konfirmasi
-// manual maupun auto-confirm setelah 7 hari (dengan halfPoints=true supaya poinnya dipotong setengah).
+// manual maupun auto-confirm setelah 2x24 jam (dengan halfPoints=true supaya poinnya dipotong setengah).
 async function applyDoublesEloAndConfirm(tx, match, { halfPoints = false } = {}) {
   const matchId = match.id;
   const ids = [match.team1Player1Id, match.team1Player2Id, match.team2Player1Id, match.team2Player2Id].sort((a, b) => a - b);
