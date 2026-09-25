@@ -33,24 +33,12 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 const { applyEloAndConfirm } = require("./routes/matches");
 const { applyDoublesEloAndConfirm } = require("./routes/doublesMatches");
-
-const NO_RESPONSE_BAN_THRESHOLD = 5;
-
-// Tandai 1 pemain "tidak merespon", naikkan hitungannya, ban otomatis kalau sudah 5x.
-async function markNoResponse(tx, playerId) {
-  const updated = await tx.player.update({
-    where: { id: playerId },
-    data: { noResponseCount: { increment: 1 } },
-  });
-  if (updated.noResponseCount >= NO_RESPONSE_BAN_THRESHOLD && !updated.isBanned) {
-    await tx.player.update({ where: { id: playerId }, data: { isBanned: true } });
-    console.log(`Player ${playerId} (${updated.name}) auto-banned setelah ${updated.noResponseCount}x tidak merespon.`);
-  }
-}
+const { markNoResponse } = require("./redCard");
 
 // Auto-confirm match yang statusnya masih "pending" lebih dari 2x24 jam (misal lawan tidak
 // pernah konfirmasi). Yang menang tetap dapat poin, tapi cuma SETENGAH dari perhitungan normal.
-// Pihak yang tidak merespon dicatat "tidak konfirmasi"-nya, dan di-ban otomatis kalau sudah 5x.
+// Pihak yang tidak merespon dicatat "tidak konfirmasi"-nya -- kalau sudah 5x, kena Kartu Merah
+// (rating -50, hitungan direset, ditandai di ranking) -- lihat src/redCard.js.
 const prismaForAutoConfirm = require("./db");
 async function autoConfirmAbandonedMatches() {
   const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
@@ -62,7 +50,7 @@ async function autoConfirmAbandonedMatches() {
     for (const match of pendingSingles) {
       await prismaForAutoConfirm.$transaction(async (tx) => {
         const nonResponderId = !match.confirmedByWinner ? match.winnerId : match.loserId;
-        await markNoResponse(tx, nonResponderId);
+        await markNoResponse(tx, nonResponderId, "single");
         await applyEloAndConfirm(tx, match, { halfPoints: true });
       });
       console.log(`Match single #${match.id} auto-confirmed (2x24 jam tidak direspon, poin setengah).`);
@@ -79,7 +67,7 @@ async function autoConfirmAbandonedMatches() {
           ? [match.team2Player1Id, match.team2Player2Id]
           : [match.team1Player1Id, match.team1Player2Id];
         for (const pid of nonRespondingTeamIds) {
-          await markNoResponse(tx, pid);
+          await markNoResponse(tx, pid, "doubles");
         }
         await applyDoublesEloAndConfirm(tx, match, { halfPoints: true });
       });
