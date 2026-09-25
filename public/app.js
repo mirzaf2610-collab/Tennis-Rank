@@ -2239,13 +2239,13 @@ async function renderRules(container) {
         <strong>Single:</strong> wajib dikonfirmasi lawan (2 pihak) sebelum rating berubah.<br/>
         <strong>Ganda:</strong> cukup 1 wakil dari tiap tim yang konfirmasi (total 2 orang, bebas siapa saja).<br/><br/>
         Kalau ditolak salah satu pihak, match otomatis dibatalkan (tidak mempengaruhi rating). Submit ulang kalau perlu dicatat lagi.<br/><br/>
-        Kalau tidak direspon sama sekali dalam <strong>3 hari</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
+        Kalau tidak direspon sama sekali dalam <strong>2x24 jam</strong>, match otomatis dianggap confirmed (yang menang tetap dapat haknya),
         tapi poinnya cuma <strong>setengah</strong> dari perhitungan normal.
       </p>
 
       <h3 style="margin-top:1.25rem;margin-bottom:0.4rem;font-size:19px;font-weight:700">5. Sanksi Tidak Merespon</h3>
       <p style="font-size:16px;line-height:1.7">
-        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 3 hari, tercatat 1x "tidak konfirmasi" di profil Anda
+        Setiap kali match auto-confirmed karena Anda tidak merespon dalam 2x24 jam, tercatat 1x "tidak konfirmasi" di profil Anda
         (bisa dilihat semua orang di tabel ranking). Kalau sudah 5x, akun otomatis diblokir dan hanya bisa dibuka kembali oleh admin.
       </p>
 
