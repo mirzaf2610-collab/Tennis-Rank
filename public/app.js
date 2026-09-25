@@ -2527,9 +2527,9 @@ async function downloadStatCard(player, btnEl) {
           </div>
 
           <div style="margin-top:18px;position:relative">
-            <div style="display:inline-block;background:linear-gradient(180deg,#f5e28c,#d4af37 40%,#9c7a1c);clip-path:polygon(10% 0,100% 0,100% 100%,0 100%,0 28%);padding:10px 26px 10px 30px;box-shadow:inset 0 2px 0 rgba(255,255,255,0.55),inset 0 -2px 6px rgba(0,0,0,0.25),0 4px 10px rgba(0,0,0,0.35)">
+            <div style="display:block;width:100%;box-sizing:border-box;background:linear-gradient(180deg,#f5e28c,#d4af37 40%,#9c7a1c);border-radius:6px;border-left:5px solid #fff8de;padding:12px 20px;box-shadow:0 4px 10px rgba(0,0,0,0.35)">
               <div style="font-size:10px;font-weight:800;color:#3a2f0b;letter-spacing:1px">RATING TERTINGGI</div>
-              <div style="font-size:34px;font-weight:800;color:#0a1220;line-height:1.1;text-shadow:0 1px 0 rgba(255,255,255,0.4)">${ovrOverall}</div>
+              <div style="font-size:34px;font-weight:800;color:#0a1220;line-height:1.2">${ovrOverall}</div>
             </div>
           </div>
 
@@ -2538,8 +2538,7 @@ async function downloadStatCard(player, btnEl) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div style="background:linear-gradient(160deg,rgba(34,46,70,0.9),rgba(16,22,35,0.9));border:1px solid rgba(255,255,255,0.1);border-left:4px solid #d4af37;border-radius:8px;padding:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 3px 8px rgba(0,0,0,0.3)">
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
-                  <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:1px">TUNGGAL</div>
-                  <div style="font-size:26px;font-weight:800;color:#d4af37;text-shadow:0 0 10px rgba(212,175,55,0.6)">${ovrSingle}</div>
+                  <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:1px">TUNGGAL</div>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-top:8px">
                   <div>
@@ -2556,8 +2555,7 @@ async function downloadStatCard(player, btnEl) {
               </div>
               <div style="background:linear-gradient(160deg,rgba(34,46,70,0.9),rgba(16,22,35,0.9));border:1px solid rgba(255,255,255,0.1);border-left:4px solid #d4af37;border-radius:8px;padding:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 3px 8px rgba(0,0,0,0.3)">
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
-                  <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:1px">GANDA</div>
-                  <div style="font-size:26px;font-weight:800;color:#d4af37;text-shadow:0 0 10px rgba(212,175,55,0.6)">${ovrDouble}</div>
+                  <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:1px">GANDA</div>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-top:8px">
                   <div>
