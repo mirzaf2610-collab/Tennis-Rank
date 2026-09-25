@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const { requireAuth } = require("../auth");
-const { MIN_MATCHES_LEADERBOARD_SINGLES } = require("../elo");
+const { MIN_MATCHES_LEADERBOARD_SINGLES, MIN_MATCHES_LEADERBOARD_DOUBLES } = require("../elo");
 const { uploadAvatar } = require("../supabaseStorage");
 const { computeSinglesStats, computeDoublesStats, buildBadges } = require("../achievements");
 
@@ -200,10 +200,23 @@ router.get("/players/:id", async (req, res) => {
     return res.status(404).json({ error: { code: "PLAYER_NOT_FOUND", message: "Pemain tidak ditemukan" } });
   }
 
-  const [singlesStats, doublesStats] = await Promise.all([
+  const [singlesStats, doublesStats, singlesRanked, doublesRanked] = await Promise.all([
     computeSinglesStats(prisma, id),
     computeDoublesStats(prisma, id),
+    prisma.player.findMany({
+      where: { isActive: true, isApproved: true, isDummy: false, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_SINGLES } },
+      orderBy: { currentRating: "desc" },
+      select: { id: true },
+    }),
+    prisma.player.findMany({
+      where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_DOUBLES } },
+      orderBy: { doublesRating: "desc" },
+      select: { id: true },
+    }),
   ]);
+  // Peringkat sekarang -- null kalau belum eligible masuk leaderboard (belum cukup match)
+  const singlesRankIdx = singlesRanked.findIndex((p) => p.id === id);
+  const doublesRankIdx = doublesRanked.findIndex((p) => p.id === id);
 
   res.json({
     player: {
@@ -212,10 +225,12 @@ router.get("/players/:id", async (req, res) => {
       singlesLosses: singlesStats.losses,
       singlesWinRate: singlesStats.winRate,
       singlesBadges: buildBadges(singlesStats),
+      singlesRank: singlesRankIdx >= 0 ? singlesRankIdx + 1 : null,
       doublesWins: doublesStats.wins,
       doublesLosses: doublesStats.losses,
       doublesWinRate: doublesStats.winRate,
       doublesBadges: buildBadges(doublesStats),
+      doublesRank: doublesRankIdx >= 0 ? doublesRankIdx + 1 : null,
     },
   });
 });
