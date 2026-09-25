@@ -1888,8 +1888,15 @@ async function renderTournaments(container) {
 
 // Bangun HTML diagram bracket visual (kolom per babak, gap membesar 2x tiap babak
 // biar kelihatan efek "corong" khas bagan turnamen, bisa di-scroll ke samping di HP)
-function buildBracketDiagramHtml(matches, isAdmin, allowParticipantSubmit = false, currentPlayerId = null) {
+function buildBracketDiagramHtml(matches, isAdmin, allowParticipantSubmit = false, currentPlayerId = null, podium = null) {
   const numRounds = matches.length ? Math.max(...matches.map((m) => m.round)) : 0;
+  const podiumBadge = (label) => {
+    if (!podium) return "";
+    if (podium.gold.includes(label)) return " 🥇";
+    if (podium.silver.includes(label)) return " 🥈";
+    if (podium.bronze.includes(label)) return " 🥉";
+    return "";
+  };
   let html = `<div style="overflow-x:auto"><div style="display:flex;gap:28px;padding:1rem 0.25rem;min-width:max-content">`;
   for (let r = 1; r <= numRounds; r++) {
     const gap = 14 * Math.pow(2, r - 1);
@@ -1902,8 +1909,8 @@ function buildBracketDiagramHtml(matches, isAdmin, allowParticipantSubmit = fals
       const p1Won = m.winner && m.participant1 && m.winner.id === m.participant1.id;
       const p2Won = m.winner && m.participant2 && m.winner.id === m.participant2.id;
       html += `<div style="border:1px solid #ddd;border-radius:8px;overflow:hidden;font-size:12px">
-        <div style="padding:6px 8px;border-bottom:1px solid #eee;${p1Won ? "font-weight:700;background:#f4f4f2" : ""}">${p1}</div>
-        <div style="padding:6px 8px;${p2Won ? "font-weight:700;background:#f4f4f2" : ""}">${p2}</div>
+        <div style="padding:6px 8px;border-bottom:1px solid #eee;${p1Won ? "font-weight:700;background:#f4f4f2" : ""}">${p1}${podiumBadge(p1)}</div>
+        <div style="padding:6px 8px;${p2Won ? "font-weight:700;background:#f4f4f2" : ""}">${p2}${podiumBadge(p2)}</div>
         ${m.score ? `<div style="padding:3px 8px;font-size:11px;color:#777;text-align:center;background:#fafafa;border-top:1px solid #eee">${m.score}</div>` : ""}
       </div>`;
       const isMatchParticipant = allowParticipantSubmit && currentPlayerId != null && (
@@ -2016,6 +2023,48 @@ function wireSubmitButtons(detail, tId, render, defaultTargetGames = 6) {
   });
 }
 
+// Tentukan juara 1/2/3 turnamen (murni buat penanda visual 🥇🥈🥉, TIDAK pengaruhi rating/poin
+// apapun) -- cuma dihitung kalau turnamen sudah selesai. Return null kalau belum bisa ditentukan.
+function getTournamentPodium(tournament, { standings, matches, knockoutMatches, cappuccinoRanking }) {
+  if (tournament.status !== "completed") return null;
+
+  if (tournament.format === "round_robin") {
+    if (!standings || standings.length === 0) return null;
+    return {
+      gold: standings[0] ? [standings[0].label] : [],
+      silver: standings[1] ? [standings[1].label] : [],
+      bronze: standings[2] ? [standings[2].label] : [],
+    };
+  }
+
+  if (tournament.format === "cappuccino" || tournament.format === "cappuccino_external") {
+    if (!cappuccinoRanking || cappuccinoRanking.length === 0) return null;
+    return {
+      gold: cappuccinoRanking[0] ? [cappuccinoRanking[0].label] : [],
+      silver: cappuccinoRanking[1] ? [cappuccinoRanking[1].label] : [],
+      bronze: cappuccinoRanking[2] ? [cappuccinoRanking[2].label] : [],
+    };
+  }
+
+  // Bracket & babak Knockout-nya Setengah Kompetisi: sama-sama diagram bagan
+  const bracketMatches = tournament.format === "bracket" ? matches : knockoutMatches;
+  if (!bracketMatches || bracketMatches.length === 0) return null;
+  const maxRound = Math.max(...bracketMatches.map((m) => m.round));
+  const final = bracketMatches.find((m) => m.round === maxRound);
+  if (!final || !final.winner || final.status !== "completed") return null;
+  const finalLoser = final.winner.id === (final.participant1 && final.participant1.id) ? final.participant2 : final.participant1;
+  const semis = bracketMatches.filter((m) => m.round === maxRound - 1 && m.status === "completed" && m.winner);
+  const bronze = semis.map((m) => {
+    const loser = m.winner.id === (m.participant1 && m.participant1.id) ? m.participant2 : m.participant1;
+    return loser ? loser.label : null;
+  }).filter(Boolean);
+  return {
+    gold: [final.winner.label],
+    silver: finalLoser ? [finalLoser.label] : [],
+    bronze,
+  };
+}
+
 async function renderTournamentDetail(container) {
   container.appendChild(nav("tournaments"));
   const backBtn = el(`<button class="btn secondary" style="margin-bottom:0.5rem">&larr; Kembali ke daftar turnamen</button>`);
@@ -2049,16 +2098,34 @@ async function renderTournamentDetail(container) {
       html += `<p class="muted" style="font-size:12px;background:#f3e5f5;padding:6px 10px;border-radius:8px">☕ Turnamen ini murni buat seru-seruan -- boleh ada peserta tamu (tidak terdaftar di aplikasi), dan hasilnya TIDAK pengaruh ke rating siapapun.</p>`;
     }
 
+    const podium = getTournamentPodium(tournament, { standings, matches, knockoutMatches, cappuccinoRanking });
+    if (podium && (podium.gold.length || podium.silver.length || podium.bronze.length)) {
+      html += `<div style="margin-top:0.75rem;background:#fffaf0;border:1px solid #f0e4c8;border-radius:10px;padding:10px 12px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">🏆 Hasil Akhir</div>
+        ${podium.gold.length ? `<div style="font-size:13px">🥇 <strong>${podium.gold.join(", ")}</strong></div>` : ""}
+        ${podium.silver.length ? `<div style="font-size:13px">🥈 <strong>${podium.silver.join(", ")}</strong></div>` : ""}
+        ${podium.bronze.length ? `<div style="font-size:13px">🥉 <strong>${podium.bronze.join(", ")}</strong></div>` : ""}
+      </div>`;
+    }
+
+    const podiumBadge = (label) => {
+      if (!podium) return "";
+      if (podium.gold.includes(label)) return " 🥇";
+      if (podium.silver.includes(label)) return " 🥈";
+      if (podium.bronze.includes(label)) return " 🥉";
+      return "";
+    };
+
     if (tournament.format === "round_robin") {
       html += `<h3 style="margin-top:1rem;font-size:15px">Klasemen</h3>`;
       html += `<table class="lb-table"><thead><tr><th>Peserta</th><th>Menang</th><th>Kalah</th><th>Sel. Game</th></tr></thead><tbody>`;
-      standings.forEach((s) => { html += `<tr><td>${s.label}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.gameDiff >= 0 ? "+" : ""}${s.gameDiff}</td></tr>`; });
+      standings.forEach((s) => { html += `<tr><td>${s.label}${podiumBadge(s.label)}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.gameDiff >= 0 ? "+" : ""}${s.gameDiff}</td></tr>`; });
       html += `</tbody></table>`;
       html += `<h3 style="margin-top:1rem;font-size:15px">Pertandingan</h3>`;
       html += buildMatchListHtml(matches, isAdmin, true, currentPlayerId);
     } else if (tournament.format === "bracket") {
       html += `<h3 style="margin-top:1rem;font-size:15px">Bagan Turnamen</h3>`;
-      html += buildBracketDiagramHtml(matches, isAdmin, true, currentPlayerId);
+      html += buildBracketDiagramHtml(matches, isAdmin, true, currentPlayerId, podium);
     } else if (tournament.format === "group_knockout") {
       groups.forEach((g) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Grup ${g.groupNumber}</h3>`;
@@ -2069,12 +2136,12 @@ async function renderTournamentDetail(container) {
       });
       if (knockoutMatches) {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">🏆 Babak Knockout</h3>`;
-        html += buildBracketDiagramHtml(knockoutMatches, isAdmin, true, currentPlayerId);
+        html += buildBracketDiagramHtml(knockoutMatches, isAdmin, true, currentPlayerId, podium);
       }
     } else if (tournament.format === "cappuccino" || tournament.format === "cappuccino_external") {
       html += `<h3 style="margin-top:1rem;font-size:15px">☕ Peringkat Individu</h3>`;
       html += `<table class="lb-table"><thead><tr><th>#</th><th>Peserta</th><th>Menang</th><th>Poin</th><th>Game Menang</th></tr></thead><tbody>`;
-      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}</td><td>${r.wins}</td><td>+${r.points}</td><td>${r.gamesWon}</td></tr>`; });
+      cappuccinoRanking.forEach((r, i) => { html += `<tr><td>${i + 1}</td><td>${r.label}${podiumBadge(r.label)}</td><td>${r.wins}</td><td>+${r.points}</td><td>${r.gamesWon}</td></tr>`; });
       html += `</tbody></table>`;
       cappuccinoRounds.forEach((rd) => {
         html += `<h3 style="margin-top:1.25rem;font-size:15px">Ronde ${rd.round}</h3>`;
