@@ -913,6 +913,41 @@ router.get("/players/:id/medals", async (req, res) => {
   }
 });
 
+// GET /api/medals-summary - ringkasan jumlah medali (gold/silver/bronze) SEMUA pemain
+// sekaligus, dipakai kolom "Trophy Case" di tabel Ranking. Sengaja dibikin terpisah dari
+// /players/:id/medals -- endpoint ini cuma proses tiap turnamen SEKALI (bukan per pemain),
+// jadi tetap ringan walau dipanggil dari halaman Ranking yang isinya banyak baris pemain.
+// (Path-nya sengaja BUKAN /players/medals-summary, biar tidak ketangkep duluan sama route
+// /players/:id yang mengira "medals-summary" itu ID pemain.)
+router.get("/medals-summary", async (req, res) => {
+  try {
+    const completedTournaments = await prisma.tournament.findMany({ where: { status: "completed" } });
+    const summary = {}; // playerId -> { gold, silver, bronze }
+    const bump = (playerId, key) => {
+      summary[playerId] = summary[playerId] || { gold: 0, silver: 0, bronze: 0 };
+      summary[playerId][key]++;
+    };
+
+    for (const t of completedTournaments) {
+      const data = await getTournamentDetailData(t.id);
+      const podium = computeTournamentPodiumIds(data.tournament, data);
+      if (!podium) continue;
+      const participantById = Object.fromEntries(data.participants.map((p) => [p.id, p]));
+      const playerIdsFor = (participantId) => {
+        const p = participantById[participantId];
+        return p ? [p.player1Id, p.player2Id].filter(Boolean) : [];
+      };
+      podium.gold.forEach((pid) => playerIdsFor(pid).forEach((playerId) => bump(playerId, "gold")));
+      podium.silver.forEach((pid) => playerIdsFor(pid).forEach((playerId) => bump(playerId, "silver")));
+      podium.bronze.forEach((pid) => playerIdsFor(pid).forEach((playerId) => bump(playerId, "bronze")));
+    }
+    res.json({ medals: summary });
+  } catch (e) {
+    console.error("Gagal ambil ringkasan medali:", e);
+    res.status(500).json({ error: { code: "MEDALS_SUMMARY_FAILED", message: e.message } });
+  }
+});
+
 // Logika inti input hasil match turnamen -- dipakai baik oleh endpoint /submit (match
 // yang masih pending) maupun /correct (setelah hasil lama dibatalkan/di-reverse duluan).
 // Sengaja dipisah jadi 1 fungsi supaya perhitungan ELO & auto-advance-nya PERSIS SAMA
