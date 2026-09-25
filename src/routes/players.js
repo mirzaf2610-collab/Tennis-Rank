@@ -122,7 +122,7 @@ router.get("/leaderboard", async (req, res) => {
 
   const players = await prisma.player.findMany({
     where: { isActive: true, isApproved: true, isDummy: false, matchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_SINGLES } },
-    select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true, noResponseCount: true, hasRedCard: true },
+    select: { id: true, name: true, currentRating: true, matchesPlayed: true, isProvisional: true, photoUrl: true, noResponseCount: true },
   });
 
   let leaderboard = await Promise.all(
@@ -178,7 +178,7 @@ router.get("/players/:id", async (req, res) => {
       id: true, name: true, unitKerja: true, currentRating: true,
       matchesPlayed: true, isProvisional: true, createdAt: true,
       doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true,
-      photoUrl: true, pendingName: true, hasRedCard: true, redCardProgress: true,
+      photoUrl: true, pendingName: true, noResponseCount: true, redCardProgress: true,
     },
   });
   if (!player) {

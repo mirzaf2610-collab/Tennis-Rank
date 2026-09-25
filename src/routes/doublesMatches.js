@@ -15,7 +15,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
   try {
     const players = await prisma.player.findMany({
       where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_DOUBLES } },
-      select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true, hasRedCard: true },
+      select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
     });
 
     let leaderboard = await Promise.all(
@@ -33,7 +33,6 @@ router.get("/doubles/leaderboard", async (req, res) => {
           losses: stats.losses,
           winRate: stats.winRate,
           noResponseCount: p.noResponseCount,
-          hasRedCard: p.hasRedCard,
           badges,
         };
       })
