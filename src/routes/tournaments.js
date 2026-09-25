@@ -626,32 +626,31 @@ async function computeStandings(db, participants, matches) {
   return sorted;
 }
 
-// GET /api/tournaments/:id - detail turnamen
-router.get("/tournaments/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  try {
-    const tournament = await prisma.tournament.findUnique({ where: { id } });
-    if (!tournament) {
-      return res.status(404).json({ error: { code: "TOURNAMENT_NOT_FOUND", message: "Turnamen tidak ditemukan" } });
-    }
+// Ambil semua data detail turnamen (dipakai baik oleh endpoint GET /tournaments/:id
+// maupun endpoint medali di bawah -- supaya logikanya sama persis, tidak dobel).
+async function getTournamentDetailData(id) {
+  const tournament = await prisma.tournament.findUnique({ where: { id } });
+  if (!tournament) {
+    throw Object.assign(new Error("Turnamen tidak ditemukan"), { status: 404 });
+  }
 
-    const participants = await prisma.tournamentParticipant.findMany({
-      where: { tournamentId: id },
-      include: { player1: true, player2: true },
-      orderBy: { seed: "asc" },
-    });
+  const participants = await prisma.tournamentParticipant.findMany({
+    where: { tournamentId: id },
+    include: { player1: true, player2: true },
+    orderBy: { seed: "asc" },
+  });
 
-    const matches = await prisma.tournamentMatch.findMany({
-      where: { tournamentId: id },
-      include: {
-        participant1: { include: { player1: true, player2: true } },
-        participant2: { include: { player1: true, player2: true } },
-        participant1b: { include: { player1: true, player2: true } },
-        participant2b: { include: { player1: true, player2: true } },
-        winnerParticipant: { include: { player1: true, player2: true } },
-      },
-      orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
-    });
+  const matches = await prisma.tournamentMatch.findMany({
+    where: { tournamentId: id },
+    include: {
+      participant1: { include: { player1: true, player2: true } },
+      participant2: { include: { player1: true, player2: true } },
+      participant1b: { include: { player1: true, player2: true } },
+      participant2b: { include: { player1: true, player2: true } },
+      winnerParticipant: { include: { player1: true, player2: true } },
+    },
+    orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
+  });
 
     // Ambil skor asli dari Match/DoublesMatch yang terhubung, buat ditampilkan di tiap kotak match
     const singleIds = matches.filter((m) => m.singleMatchId).map((m) => m.singleMatchId);
@@ -791,9 +790,10 @@ router.get("/tournaments/:id", async (req, res) => {
         .sort((a, b) => b.wins - a.wins || b.points - a.points || b.gamesWon - a.gamesWon);
     }
 
-    res.json({
+    return {
       tournament,
-      participants: participants.map((p) => ({ id: p.id, label: participantLabel(p), seed: p.seed, groupNumber: p.groupNumber })),
+      participants,
+      participantsOut: participants.map((p) => ({ id: p.id, label: participantLabel(p), seed: p.seed, groupNumber: p.groupNumber })),
       matches: tournament.format === "bracket" ? matches.filter((m) => m.stage === "main").map(toOut) : matches.map(toOut),
       standings,
       groups,
@@ -801,10 +801,115 @@ router.get("/tournaments/:id", async (req, res) => {
       canStartKnockout,
       cappuccinoRounds,
       cappuccinoRanking,
+    };
+}
+
+// Tentukan juara 1/2/3 (podium) satu turnamen, pakai ID (bukan label) supaya bisa dicocokkan
+// ke pemain tertentu -- dipakai endpoint medali di bawah. Return null kalau turnamen belum
+// selesai atau podium belum bisa ditentukan.
+function computeTournamentPodiumIds(tournament, { standings, matches, knockoutMatches, cappuccinoRanking }) {
+  if (tournament.status !== "completed") return null;
+
+  if (tournament.format === "round_robin") {
+    if (!standings || standings.length === 0) return null;
+    return {
+      gold: standings[0] ? [standings[0].participantId] : [],
+      silver: standings[1] ? [standings[1].participantId] : [],
+      bronze: standings[2] ? [standings[2].participantId] : [],
+    };
+  }
+
+  if (tournament.format === "cappuccino" || tournament.format === "cappuccino_external") {
+    if (!cappuccinoRanking || cappuccinoRanking.length === 0) return null;
+    return {
+      gold: cappuccinoRanking[0] ? [cappuccinoRanking[0].participantId] : [],
+      silver: cappuccinoRanking[1] ? [cappuccinoRanking[1].participantId] : [],
+      bronze: cappuccinoRanking[2] ? [cappuccinoRanking[2].participantId] : [],
+    };
+  }
+
+  // Bracket & babak Knockout-nya Setengah Kompetisi: sama-sama diagram bagan
+  const bracketMatches = tournament.format === "bracket" ? matches : knockoutMatches;
+  if (!bracketMatches || bracketMatches.length === 0) return null;
+  const maxRound = Math.max(...bracketMatches.map((m) => m.round));
+  const final = bracketMatches.find((m) => m.round === maxRound);
+  if (!final || !final.winner || final.status !== "completed") return null;
+  const finalLoserId = final.winner.id === (final.participant1 && final.participant1.id)
+    ? (final.participant2 && final.participant2.id)
+    : (final.participant1 && final.participant1.id);
+  const semis = bracketMatches.filter((m) => m.round === maxRound - 1 && m.status === "completed" && m.winner);
+  const bronze = semis.map((m) => {
+    const loserId = m.winner.id === (m.participant1 && m.participant1.id)
+      ? (m.participant2 && m.participant2.id)
+      : (m.participant1 && m.participant1.id);
+    return loserId;
+  }).filter(Boolean);
+  return { gold: [final.winner.id], silver: finalLoserId ? [finalLoserId] : [], bronze };
+}
+
+// GET /api/tournaments/:id - detail turnamen
+router.get("/tournaments/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const data = await getTournamentDetailData(id);
+    res.json({
+      tournament: data.tournament,
+      participants: data.participantsOut,
+      matches: data.matches,
+      standings: data.standings,
+      groups: data.groups,
+      knockoutMatches: data.knockoutMatches,
+      canStartKnockout: data.canStartKnockout,
+      cappuccinoRounds: data.cappuccinoRounds,
+      cappuccinoRanking: data.cappuccinoRanking,
     });
   } catch (e) {
+    const status = e.status || 500;
+    if (status === 404) return res.status(404).json({ error: { code: "TOURNAMENT_NOT_FOUND", message: e.message } });
     console.error("Gagal ambil detail turnamen:", e);
     res.status(500).json({ error: { code: "TOURNAMENT_DETAIL_FAILED", message: e.message } });
+  }
+});
+
+// GET /api/players/:id/medals - riwayat medali (juara 1/2/3) dari semua turnamen yang SUDAH
+// SELESAI dan pernah diikuti pemain ini. Dipakai di halaman Profil buat tampilkan medali,
+// cuma nomor (1/2/3) di lambang medalinya -- tidak pengaruhi rating apapun, murni penanda.
+router.get("/players/:id/medals", async (req, res) => {
+  const playerId = Number(req.params.id);
+  try {
+    const myParticipations = await prisma.tournamentParticipant.findMany({
+      where: { OR: [{ player1Id: playerId }, { player2Id: playerId }] },
+      select: { tournamentId: true },
+      distinct: ["tournamentId"],
+    });
+    const tournamentIds = myParticipations.map((p) => p.tournamentId);
+    if (tournamentIds.length === 0) return res.json({ medals: [] });
+
+    const completedTournaments = await prisma.tournament.findMany({
+      where: { id: { in: tournamentIds }, status: "completed" },
+      orderBy: { completedAt: "desc" },
+    });
+
+    const medals = [];
+    for (const t of completedTournaments) {
+      const data = await getTournamentDetailData(t.id);
+      const podium = computeTournamentPodiumIds(data.tournament, data);
+      if (!podium) continue;
+      const myParticipantIds = data.participants
+        .filter((p) => p.player1Id === playerId || p.player2Id === playerId)
+        .map((p) => p.id);
+      let place = null;
+      if (myParticipantIds.some((pid) => podium.gold.includes(pid))) place = 1;
+      else if (myParticipantIds.some((pid) => podium.silver.includes(pid))) place = 2;
+      else if (myParticipantIds.some((pid) => podium.bronze.includes(pid))) place = 3;
+      if (place) {
+        medals.push({ tournamentId: t.id, tournamentName: t.name, format: t.format, place, completedAt: t.completedAt });
+      }
+    }
+    res.json({ medals });
+  } catch (e) {
+    console.error("Gagal ambil medali:", e);
+    res.status(500).json({ error: { code: "MEDALS_FAILED", message: e.message } });
   }
 });
 
