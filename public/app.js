@@ -2471,7 +2471,7 @@ function ratingToOvr(rating) {
 // Bangun elemen kartu bergaya "trading card" (di luar layar, gak kelihatan user) lalu di-screenshot
 // jadi PNG pakai html2canvas dan didownload. Baru dipanggil pas tombol "Download Kartu Statistik"
 // diklik -- jadi tidak membebani render halaman Profil normal.
-async function downloadStatCard(player, btnEl) {
+async function downloadStatCard(player, medals, btnEl) {
   const originalText = btnEl.textContent;
   btnEl.disabled = true;
   btnEl.textContent = "Menyiapkan...";
@@ -2597,6 +2597,17 @@ async function downloadStatCard(player, btnEl) {
             <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px;text-shadow:0 0 8px rgba(63,208,224,0.6)">GELAR</div>
             <div style="display:flex;gap:14px;flex-wrap:wrap">${badgeIconsHtml}</div>
           </div>
+
+          ${medals.length > 0 ? `
+          <div style="margin-top:18px;position:relative">
+            <div style="font-size:11px;letter-spacing:2px;color:#3fd0e0;font-weight:800;margin-bottom:10px;text-shadow:0 0 8px rgba(63,208,224,0.6)">JUARA TURNAMEN</div>
+            <div style="display:flex;gap:18px">
+              <div style="display:flex;align-items:center;gap:6px"><span style="width:28px;height:28px;border-radius:50%;background:#d4af37;color:#2a2308;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">1</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 1).length}</span></div>
+              <div style="display:flex;align-items:center;gap:6px"><span style="width:28px;height:28px;border-radius:50%;background:#9aa0a6;color:#20242a;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">2</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 2).length}</span></div>
+              <div style="display:flex;align-items:center;gap:6px"><span style="width:28px;height:28px;border-radius:50%;background:#b5691a;color:#2a1608;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">3</span><span style="color:#fff;font-weight:700;font-size:14px">&times;${medals.filter((m) => m.place === 3).length}</span></div>
+            </div>
+          </div>
+          ` : ""}
 
           <div style="margin-top:20px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.12);display:flex;justify-content:space-between;align-items:center;position:relative">
             <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#c7cfdd">PSP TENNIS RANK</div>
@@ -2734,7 +2745,10 @@ async function renderProfile(container) {
   });
 
   try {
-    const { player } = await api(`/players/${state.player.id}`);
+    const [{ player }, { medals }] = await Promise.all([
+      api(`/players/${state.player.id}`),
+      api(`/players/${state.player.id}/medals`),
+    ]);
     const allBadges = [...(player.singlesBadges || []), ...(player.doublesBadges || [])];
     const seen = new Set();
     const badgeChips = allBadges
@@ -2743,6 +2757,14 @@ async function renderProfile(container) {
       .join("");
     const rankText = (r) => (r ? `#${r}` : "Belum Peringkat");
     const winRateText = (w) => `${Math.round(w * 10) / 10}`;
+    const medalColors = { 1: "#d4af37", 2: "#9aa0a6", 3: "#b5691a" };
+    const medalsHtml = medals
+      .map((m) => `
+        <div class="row" style="gap:10px">
+          <span style="width:26px;height:26px;border-radius:50%;background:${medalColors[m.place]};color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${m.place}</span>
+          <span style="font-size:14px">${m.tournamentName}</span>
+        </div>`)
+      .join("");
 
     wrap.querySelector("#profile-stats").innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:0.75rem">
@@ -2771,6 +2793,12 @@ async function renderProfile(container) {
           ${badgeChips || `<span class="muted" style="font-size:12px">Belum ada gelar. Terus main untuk dapat gelar!</span>`}
         </div>
       </div>
+      ${medals.length > 0 ? `
+        <div style="margin-bottom:0.5rem">
+          <span class="muted" style="font-size:12px;font-weight:600">🏅 RIWAYAT JUARA TURNAMEN</span>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">${medalsHtml}</div>
+        </div>
+      ` : ""}
       ${player.noResponseCount > 0 ? `
         <div class="row" style="background:#fdecea;border-radius:8px;margin-top:1rem;flex-direction:column;align-items:flex-start;gap:2px">
           <span style="font-weight:600;color:#c62828">${"🟥".repeat(player.noResponseCount)} ${player.noResponseCount}/5 Kartu Merah</span>
@@ -2779,7 +2807,7 @@ async function renderProfile(container) {
       ` : ""}
       <button id="download-card-btn" class="btn secondary" style="margin-top:1rem">📥 Download Kartu Statistik</button>
     `;
-    wrap.querySelector("#download-card-btn").addEventListener("click", (e) => downloadStatCard(player, e.target));
+    wrap.querySelector("#download-card-btn").addEventListener("click", (e) => downloadStatCard(player, medals, e.target));
   } catch (err) {
     wrap.querySelector("#profile-stats").innerHTML = `<p class="error">${err.message}</p>`;
   }
