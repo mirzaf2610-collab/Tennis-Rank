@@ -2536,10 +2536,20 @@ async function downloadStatCard(player, btnEl) {
             </div>
           </div>
 
-          <div style="margin-top:18px;position:relative">
-            <div style="display:block;width:100%;box-sizing:border-box;background:linear-gradient(180deg,#f5e28c,#d4af37 40%,#9c7a1c);border-radius:6px;border-left:5px solid #fff8de;padding:12px 20px;box-shadow:0 4px 10px rgba(0,0,0,0.35)">
+          <div style="margin-top:18px;position:relative;display:flex;align-items:stretch;gap:12px">
+            <div style="display:inline-block;background:linear-gradient(180deg,#f5e28c,#d4af37 40%,#9c7a1c);border-radius:6px;border-left:5px solid #fff8de;padding:12px 26px;box-shadow:0 4px 10px rgba(0,0,0,0.35)">
               <div style="font-size:10px;font-weight:800;color:#3a2f0b;letter-spacing:1px">OVR</div>
               <div style="font-size:34px;font-weight:800;color:#0a1220;line-height:1.2">${ovrOverall}</div>
+            </div>
+            <div style="flex:1;background:rgba(22,31,48,0.7);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px 14px;display:flex;flex-direction:column;justify-content:center;gap:6px">
+              <div style="display:flex;justify-content:space-between;font-size:12px">
+                <span style="color:#9aa4b8">🎾 Total Main</span>
+                <span style="color:#fff;font-weight:700">${player.matchesPlayed + player.doublesMatchesPlayed}x</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:12px">
+                <span style="color:#9aa4b8">🏆 Total Menang</span>
+                <span style="color:#fff;font-weight:700">${player.singlesWins + player.doublesWins}x</span>
+              </div>
             </div>
           </div>
 
