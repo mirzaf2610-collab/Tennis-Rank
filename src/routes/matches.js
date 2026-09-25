@@ -85,7 +85,7 @@ router.post("/matches", requireAuth, async (req, res) => {
 
 // POST /api/matches/:id/confirm
 // Fungsi inti: terapkan hasil ELO ke match & kedua pemain. Dipakai baik untuk konfirmasi manual
-// maupun auto-confirm setelah 7 hari (dengan halfPoints=true supaya poinnya dipotong setengah).
+// maupun auto-confirm setelah 2x24 jam (dengan halfPoints=true supaya poinnya dipotong setengah).
 async function applyEloAndConfirm(tx, match, { halfPoints = false } = {}) {
   const matchId = match.id;
   const ids = [match.winnerId, match.loserId].sort((a, b) => a - b);
