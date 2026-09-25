@@ -2439,16 +2439,13 @@ async function renderProfile(container) {
   container.appendChild(nav("profile"));
   const wrap = el(`
     <div class="card">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:1rem">
-        <div id="avatar-preview">${avatarHtml(state.player.photoUrl, state.player.name, 56)}</div>
-        <h2 style="margin:0">${state.player.name}</h2>
-      </div>
+      <div id="profile-stats">Memuat...</div>
+      <button id="logout-btn" class="btn secondary" style="margin-top:1rem">Keluar</button>
+      <div style="height:1px;background:#e5e5e0;margin:1rem 0"></div>
       <label>Ganti foto profil (JPG/PNG, maks 2MB)</label>
       <input id="photo-input" type="file" accept="image/jpeg,image/png" />
       <div id="photo-error" class="error" style="display:none"></div>
       <button id="photo-upload-btn" class="btn secondary">Upload Foto</button>
-      <div id="profile-stats" style="margin-top:1rem">Memuat...</div>
-      <button id="logout-btn" class="btn secondary">Keluar</button>
     </div>
   `);
   container.appendChild(wrap);
@@ -2539,39 +2536,64 @@ async function renderProfile(container) {
 
   try {
     const { player } = await api(`/players/${state.player.id}`);
-    const singleBadgesHtml = (player.singlesBadges || [])
-      .map((b) => `<span style="display:inline-block;background:#fff3cd;border:1px solid #f0d68a;border-radius:20px;padding:4px 12px;font-size:12px;margin:2px 4px 2px 0">${b.emoji} ${b.label}</span>`)
+    const allBadges = [...(player.singlesBadges || []), ...(player.doublesBadges || [])];
+    const seen = new Set();
+    const badgeChips = allBadges
+      .filter((b) => { const key = `${b.emoji}${b.label}`; if (seen.has(key)) return false; seen.add(key); return true; })
+      .map((b) => `<div style="background:#161f30;border:1px solid #d4af37;padding:6px 14px;font-size:12px;font-weight:700;color:#d4af37">${b.emoji} ${b.label}</div>`)
       .join("");
-    const doubleBadgesHtml = (player.doublesBadges || [])
-      .map((b) => `<span style="display:inline-block;background:#fff3cd;border:1px solid #f0d68a;border-radius:20px;padding:4px 12px;font-size:12px;margin:2px 4px 2px 0">${b.emoji} ${b.label}</span>`)
-      .join("");
+    const rankText = (r) => (r ? `#${r}` : "Belum Peringkat");
+    const winRateText = (w) => `${Math.round(w * 10) / 10}`;
 
     wrap.querySelector("#profile-stats").innerHTML = `
-      <div style="background:linear-gradient(135deg,#1a1a1a,#3a3a3a);border-radius:14px;padding:1.25rem;color:#fff;margin-bottom:1rem">
-        <div style="font-size:13px;opacity:0.7;margin-bottom:8px">KARTU STATISTIK</div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:12px">
-          <div>
-            <div style="font-size:11px;opacity:0.7">Single</div>
-            <div style="font-size:22px;font-weight:600">${Math.round(player.currentRating)}</div>
-            <div style="font-size:11px;opacity:0.8">${player.matchesPlayed}x main &middot; ${player.singlesWins}M-${player.singlesLosses}K &middot; ${player.singlesWinRate}%</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:11px;opacity:0.7">Ganda</div>
-            <div style="font-size:22px;font-weight:600">${Math.round(player.doublesRating)}</div>
-            <div style="font-size:11px;opacity:0.8">${player.doublesMatchesPlayed}x main &middot; ${player.doublesWins}M-${player.doublesLosses}K &middot; ${player.doublesWinRate}%</div>
+      <div style="background:#101826;border:1px solid #223047;border-radius:4px;overflow:hidden">
+        <div style="height:4px;width:100%;background:#d4af37"></div>
+        <div style="padding:18px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #223047">
+          <div style="border:2px solid #d4af37;border-radius:50%;display:inline-flex">${avatarHtml(player.photoUrl, player.name, 56)}</div>
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:0.3px">${player.name}</div>
+            <div style="font-size:10px;letter-spacing:2px;color:#3fd0e0;font-weight:700">KARTU STATISTIK</div>
           </div>
         </div>
-        ${singleBadgesHtml || doubleBadgesHtml ? `
-          <div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:10px;margin-top:4px">
-            ${singleBadgesHtml ? `<div style="margin-bottom:6px">${singleBadgesHtml}</div>` : ""}
-            ${doubleBadgesHtml ? `<div>${doubleBadgesHtml}</div>` : ""}
+        <div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="background:#161f30;border:1px solid #223047;border-left:3px solid #d4af37;padding:12px;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;letter-spacing:1.5px;color:#3fd0e0;font-weight:700">TUNGGAL</div>
+              <div>
+                <div style="font-family:'Courier New',monospace;font-size:30px;font-weight:700;color:#fff;line-height:1">${Math.round(player.currentRating)}</div>
+                <div style="font-size:10px;color:#6d7890;margin-top:2px">POINT</div>
+              </div>
+              <div>
+                <div style="font-family:'Courier New',monospace;font-size:16px;font-weight:700;color:#d4af37;line-height:1">${rankText(player.singlesRank)}</div>
+                <div style="font-size:10px;color:#6d7890;margin-top:2px">PERINGKAT SAAT INI</div>
+              </div>
+              <div style="font-size:11px;color:#9aa4b8;line-height:1.6">${player.matchesPlayed}x main &middot; ${player.singlesWins}M-${player.singlesLosses}K<br>Win rate ${winRateText(player.singlesWinRate)}%</div>
+              <div style="align-self:flex-end;margin-top:2px;font-size:9px;letter-spacing:1px;font-weight:700;color:#101826;background:#3fd0e0;padding:2px 8px">${player.isProvisional ? "PROVISIONAL" : "STABIL"}</div>
+            </div>
+            <div style="background:#161f30;border:1px solid #223047;border-left:3px solid #d4af37;padding:12px;display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;letter-spacing:1.5px;color:#3fd0e0;font-weight:700">GANDA</div>
+              <div>
+                <div style="font-family:'Courier New',monospace;font-size:30px;font-weight:700;color:#fff;line-height:1">${Math.round(player.doublesRating)}</div>
+                <div style="font-size:10px;color:#6d7890;margin-top:2px">POINT</div>
+              </div>
+              <div>
+                <div style="font-family:'Courier New',monospace;font-size:16px;font-weight:700;color:#d4af37;line-height:1">${rankText(player.doublesRank)}</div>
+                <div style="font-size:10px;color:#6d7890;margin-top:2px">PERINGKAT SAAT INI</div>
+              </div>
+              <div style="font-size:11px;color:#9aa4b8;line-height:1.6">${player.doublesMatchesPlayed}x main &middot; ${player.doublesWins}M-${player.doublesLosses}K<br>Win rate ${winRateText(player.doublesWinRate)}%</div>
+              <div style="align-self:flex-end;margin-top:2px;font-size:9px;letter-spacing:1px;font-weight:700;color:#101826;background:#d4af37;padding:2px 8px">${player.doublesIsProvisional ? "PROVISIONAL" : "STABIL"}</div>
+            </div>
           </div>
-        ` : `<div style="font-size:12px;opacity:0.6;border-top:1px solid rgba(255,255,255,0.2);padding-top:10px">Belum ada gelar. Terus main untuk dapat gelar!</div>`}
+          <div>
+            <div style="font-size:11px;letter-spacing:1.5px;color:#3fd0e0;font-weight:700;margin-bottom:8px">GELAR</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${badgeChips || `<div style="font-size:12px;color:#6d7890">Belum ada gelar. Terus main untuk dapat gelar!</div>`}
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="row"><span>Status Single</span><span>${player.isProvisional ? "Provisional" : "Stabil"}</span></div>
-      <div class="row"><span>Status Ganda</span><span>${player.doublesIsProvisional ? "Provisional" : "Stabil"}</span></div>
       ${player.noResponseCount > 0 ? `
-        <div class="row" style="background:#fdecea;border-radius:8px;margin-top:0.5rem;flex-direction:column;align-items:flex-start;gap:2px">
+        <div class="row" style="background:#fdecea;border-radius:8px;margin-top:1rem;flex-direction:column;align-items:flex-start;gap:2px">
           <span style="font-weight:600;color:#c62828">${"🟥".repeat(player.noResponseCount)} ${player.noResponseCount}/5 Kartu Merah</span>
           <span style="font-size:12px;color:#555">Setiap kartu merah didapat karena tidak merespon konfirmasi match. Kalau sampai 5, rating dikurangi 50 poin. Konfirmasi/input match lagi ${3 - player.redCardProgress}x untuk menghapus semua kartu merah (progres: ${player.redCardProgress}/3).</span>
         </div>
