@@ -384,8 +384,23 @@ async function renderLeaderboard(container) {
     tourneyPreviewWrap.querySelector("#tourney-preview-list").innerHTML = `<p class="error">${err.message}</p>`;
   }
 
-  const pendingWrap = el(`<div class="card" style="display:none"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">⏳ Menunggu Konfirmasi</h2><button id="pending-refresh-btn" class="btn secondary" style="margin-top:0;width:auto;padding:4px 10px;font-size:11px">🔄 Refresh</button></div><p class="muted" style="font-size:12px;margin-top:0.25rem">Hasil di bawah ini baru klaim sepihak dan BELUM masuk ke rating -- cuma pengingat supaya cepat dikonfirmasi/ditolak oleh pihak yang bersangkutan.</p><div id="pending-reminder-list"></div></div>`);
+  const pendingWrap = el(`<div class="card" style="display:none"><div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">⏳ Menunggu Konfirmasi</h2><button id="pending-refresh-btn" class="btn secondary" style="margin-top:0;width:auto;padding:4px 10px;font-size:11px">🔄 Refresh</button></div><p class="muted" style="font-size:12px;margin-top:0.25rem">Hasil di bawah ini baru klaim sepihak dan BELUM masuk ke rating. Kalau match-nya menunggu konfirmasi Anda, tombol kuning akan muncul supaya bisa langsung konfirmasi di sini juga (selain lewat tab "Konfirmasi").</p><div id="pending-reminder-list"></div></div>`);
   container.appendChild(pendingWrap);
+
+  function needsMyConfirm(m) {
+    if (!state.player) return false;
+    const myId = state.player.id;
+    if (m.type === "single") {
+      if (myId === m.winnerId && !m.confirmedByWinner) return true;
+      if (myId === m.loserId && !m.confirmedByLoser) return true;
+      return false;
+    }
+    if (myId === m.team1Player1Id && !m.confirmedT1P1) return true;
+    if (myId === m.team1Player2Id && !m.confirmedT1P2) return true;
+    if (myId === m.team2Player1Id && !m.confirmedT2P1) return true;
+    if (myId === m.team2Player2Id && !m.confirmedT2P2) return true;
+    return false;
+  }
 
   async function loadPendingReminder() {
     const listEl = pendingWrap.querySelector("#pending-reminder-list");
@@ -402,15 +417,35 @@ async function renderLeaderboard(container) {
           const badge = m.type === "double"
             ? `<span style="font-size:10px;background:#e3f2fd;color:#1565c0;padding:2px 6px;border-radius:6px;font-weight:600">GANDA</span>`
             : `<span style="font-size:10px;background:#fff3cd;color:#8a6d00;padding:2px 6px;border-radius:6px;font-weight:600">SINGLE</span>`;
+          const mine = needsMyConfirm(m);
           return `
-            <div class="row" style="align-items:flex-start;flex-direction:column;gap:2px">
+            <div class="row" style="align-items:flex-start;flex-direction:column;gap:4px;${mine ? "background:#fff9db;border-radius:8px;padding:8px;margin:2px 0" : ""}">
               <div style="display:flex;align-items:center;gap:6px;font-size:13px">
                 ${badge} <span class="muted" style="font-size:11px">${timeAgo(m.createdAt)}</span>
               </div>
               <div style="font-size:14px"><strong>${m.claimedWinnerText}</strong> klaim menang vs ${m.claimedLoserText} <span class="muted">(${m.score})</span> <span class="muted" style="font-size:12px">— menunggu konfirmasi</span></div>
+              ${mine ? `<button class="btn" style="margin-top:2px;background:#ffd43b;color:#1a1a1a;font-weight:700" data-confirm-pending="${m.matchId}" data-pending-type="${m.type}">✅ Konfirmasi Sekarang</button>` : ""}
             </div>`;
         })
         .join("");
+      listEl.querySelectorAll("[data-confirm-pending]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          btn.textContent = "Mengirim...";
+          const type = btn.dataset.pendingType;
+          const mid = btn.dataset.confirmPending;
+          try {
+            const endpoint = type === "double" ? `/doubles/matches/${mid}/confirm` : `/matches/${mid}/confirm`;
+            const data = await api(endpoint, { method: "POST" });
+            alert(data.message || "Konfirmasi berhasil dikirim.");
+            loadPendingReminder();
+          } catch (err) {
+            alert(err.message);
+            btn.disabled = false;
+            btn.textContent = "✅ Konfirmasi Sekarang";
+          }
+        });
+      });
     } catch (err) {
       // Diam saja kalau gagal -- ini cuma pengingat tambahan, tidak kritikal
     }
