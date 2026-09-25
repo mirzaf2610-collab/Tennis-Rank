@@ -3,6 +3,7 @@ const { requireAuth } = require("../auth");
 const { calculateDoublesElo, getKFactor, PROVISIONAL_THRESHOLD, MIN_MATCHES_LEADERBOARD_DOUBLES, isValidTargetGames, DEFAULT_TARGET_GAMES } = require("../elo");
 const { computeDoublesStats, buildBadges } = require("../achievements");
 const { sendPushToPlayer } = require("../pushService");
+const { advanceRedCardProgress } = require("../redCard");
 
 const router = express.Router();
 const prisma = require("../db");
@@ -14,7 +15,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
   try {
     const players = await prisma.player.findMany({
       where: { isActive: true, isDummy: false, doublesMatchesPlayed: { gte: MIN_MATCHES_LEADERBOARD_DOUBLES } },
-      select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true },
+      select: { id: true, name: true, doublesRating: true, doublesMatchesPlayed: true, doublesIsProvisional: true, photoUrl: true, noResponseCount: true, hasRedCard: true },
     });
 
     let leaderboard = await Promise.all(
@@ -32,6 +33,7 @@ router.get("/doubles/leaderboard", async (req, res) => {
           losses: stats.losses,
           winRate: stats.winRate,
           noResponseCount: p.noResponseCount,
+          hasRedCard: p.hasRedCard,
           badges,
         };
       })
@@ -103,6 +105,7 @@ router.post("/doubles/matches", requireAuth, async (req, res) => {
   });
 
   const submitterName = players.find((p) => p.id === team1Player1Id).name;
+  advanceRedCardProgress(prisma, team1Player1Id).catch((err) => console.error("advanceRedCardProgress gagal:", err.message));
   const otherPlayerIds = [team1Player2Id, team2Player1Id, team2Player2Id];
   for (const pid of otherPlayerIds) {
     sendPushToPlayer(pid, {
@@ -225,6 +228,7 @@ router.post("/doubles/matches/:id/confirm", requireAuth, async (req, res) => {
       }
 
       await tx.doublesMatch.update({ where: { id: matchId }, data: { [slot]: true } });
+      await advanceRedCardProgress(tx, playerId);
       const updated = await tx.doublesMatch.findUnique({ where: { id: matchId } });
 
       const team1Confirmed = updated.confirmedT1P1 || updated.confirmedT1P2;

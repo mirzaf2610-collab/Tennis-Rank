@@ -2,6 +2,7 @@ const express = require("express");
 const { requireAuth } = require("../auth");
 const { calculateElo, getKFactor, PROVISIONAL_THRESHOLD, isValidTargetGames, DEFAULT_TARGET_GAMES, MIN_TARGET_GAMES, MAX_TARGET_GAMES } = require("../elo");
 const { sendPushToPlayer } = require("../pushService");
+const { advanceRedCardProgress } = require("../redCard");
 
 const router = express.Router();
 const prisma = require("../db");
@@ -68,6 +69,7 @@ router.post("/matches", requireAuth, async (req, res) => {
 
   const submitterName = isWinnerSubmitting ? winner.name : loser.name;
   const targetPlayerId = isWinnerSubmitting ? loserId : winnerId;
+  advanceRedCardProgress(prisma, submittedBy).catch((err) => console.error("advanceRedCardProgress gagal:", err.message));
   sendPushToPlayer(targetPlayerId, {
     title: "Konfirmasi Hasil Match",
     body: `${submitterName} melaporkan hasil match single melawan Anda. Yuk konfirmasi!`,
@@ -202,6 +204,7 @@ router.post("/matches/:id/confirm", requireAuth, async (req, res) => {
         where: { id: matchId },
         data: isWinner ? { confirmedByWinner: true } : { confirmedByLoser: true },
       });
+      await advanceRedCardProgress(tx, confirmingPlayerId);
 
       const updated = await tx.match.findUnique({ where: { id: matchId } });
 
