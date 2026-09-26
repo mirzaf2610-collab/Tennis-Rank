@@ -2620,7 +2620,7 @@ async function downloadStatCard(player, medals, btnEl) {
 
           <div style="margin-top:20px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.12);display:flex;justify-content:space-between;align-items:center;position:relative">
             <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#c7cfdd">PSP TENNIS RANK</div>
-            <div style="font-size:10px;color:#4a5468">${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
+            <div style="font-size:10px;color:#4a5468">Per ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</div>
           </div>
 
         </div>
@@ -2642,7 +2642,8 @@ async function downloadStatCard(player, medals, btnEl) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `kartu-statistik-${(player.name || "pemain").toLowerCase().replace(/\s+/g, "-")}.png`;
+      const fileDateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, aman buat nama file
+      a.download = `kartu-statistik-${(player.name || "pemain").toLowerCase().replace(/\s+/g, "-")}-${fileDateStr}.png`;
       a.click();
       URL.revokeObjectURL(url);
     }, "image/png");
